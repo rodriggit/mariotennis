@@ -13,6 +13,7 @@
 //    modules' data accesses read (hooks in recomp.toml).
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include "recomp.h"
@@ -58,6 +59,9 @@ struct Region {
     uint32_t size;
     const MtFile* file;
 };
+
+// MT_TRACE=1 logs every file load and TLB mapping.
+const bool trace = std::getenv("MT_TRACE") != nullptr;
 
 std::vector<Region> registered;      // code registered with the runtime by us
 std::vector<Region> window_buffers;  // window modules sitting in RAM, not registered
@@ -108,6 +112,9 @@ int32_t mt_window_base = 0;
 
 void mt_on_main_loaded(uint8_t* rdram, uint32_t main_rom, int32_t vram, uint32_t size) {
     (void)rdram;
+    if (trace) {
+        fprintf(stderr, "[mt] main decompressed at 0x%08X\n", (uint32_t)vram);
+    }
     load_overlays(main_rom, vram, size);
 }
 
@@ -116,6 +123,10 @@ void mt_on_file_loaded(uint8_t* rdram, uint32_t rom, int32_t dest) {
     if (f == nullptr) {
         fprintf(stderr, "[mt] load of unknown ROM offset 0x%08X to 0x%08X\n", rom, (uint32_t)dest);
         return;
+    }
+    if (trace) {
+        fprintf(stderr, "[mt] file %u (%s) -> 0x%08X, 0x%X bytes\n", f->index,
+                f->synth_rom == 0 ? "data" : "code", (uint32_t)dest, f->size);
     }
     clear_region(dest, f->size);
     if (f->synth_rom == 0) {
@@ -150,6 +161,9 @@ void mt_on_file_loaded(uint8_t* rdram, uint32_t rom, int32_t dest) {
 void osMapTLB_recomp(uint8_t* rdram, recomp_context* ctx) {
     int32_t vaddr = (int32_t)ctx->r6;
     uint32_t even_paddr = (uint32_t)ctx->r7;
+    if (trace) {
+        fprintf(stderr, "[mt] osMapTLB 0x%08X -> 0x%08X\n", (uint32_t)vaddr, even_paddr);
+    }
 
     if (vaddr == TLB_209_VRAM) {
         return;  // file 209 is recompiled at its buffer

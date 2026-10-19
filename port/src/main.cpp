@@ -347,6 +347,19 @@ static void update_gfx(void*) {
 
 // ---------------------------------------------------------------------------------------
 
+// The VI thread only sets a placeholder video mode while the game hasn't started; once it
+// has, it uses the game's mode. Start the game from the VI callback after a couple of VIs,
+// so there is a mode before the game calls osViSetMode (the runtime's menu-less start).
+static std::u8string pending_game_id;
+
+static void vi_callback() {
+    static int vis = 0;
+    if (!pending_game_id.empty() && ++vis >= 2) {
+        recomp::start_game(pending_game_id);
+        pending_game_id.clear();
+    }
+}
+
 static RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
     if (task->t.type == M_AUDTASK) {
         return aspMain;
@@ -467,13 +480,15 @@ int main(int argc, char** argv) {
         .set_rumble = set_rumble,
         .get_connected_device_info = get_connected_device_info,
     };
-    ultramodern::events::callbacks_t events_callbacks{};
+    ultramodern::events::callbacks_t events_callbacks{
+        .vi_callback = vi_callback,
+    };
     ultramodern::error_handling::callbacks_t error_callbacks{
         .message_box = message_box,
     };
     ultramodern::threads::callbacks_t threads_callbacks{};
 
-    recomp::start_game(id);
+    pending_game_id = id;
     recomp::start(version, {}, rsp_callbacks, renderer_callbacks, audio_callbacks, input_callbacks,
                   gfx_callbacks, events_callbacks, error_callbacks, threads_callbacks);
     return EXIT_SUCCESS;

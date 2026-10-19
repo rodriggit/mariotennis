@@ -1,0 +1,10 @@
+# ROMs never go in the repo
+*.z64
+*.n64
+*.v64
+source/
+
+# Python env
+.venv/
+
+__pycache__/

@@ -19,6 +19,8 @@ from reloc_tlb import relocate
 LOAD_LZ = 0x80037DFC
 LOAD_LZ_EPILOGUE = 0x80037E34     # after `jal lz_stream` + delay slot; s0/s1 still valid
 BOOT_J_MAIN = 0x80300070          # `j 0x80031000` in boot_80300050
+BOOT_COUNT_READS = [(0x80300058, 18), (0x8030006C, 6)]   # mfc0 s2/a2, Count (v0 is dead at both)
+BOOT_CACHE_FUNCS = [0x803002A0, 0x803002D0]              # I-cache invalidate / D-cache writeback
 MAIN_SIZE = 0x2AE10
 
 
@@ -126,6 +128,11 @@ def main():
     # N64Recomp renames the entrypoint function before applying patches.
     patches.append(("recomp_entrypoint", S.BOOT_STUB_JR,
                     0x08000000 | ((S.BOOT_ENTRY >> 2) & 0x03FFFFFF)))
+    # boot entry reads cop0 Count twice (passed to main); N64Recomp only handles Status
+    for vram, reg in BOOT_COUNT_READS:
+        patches.append(("boot_%08X" % S.BOOT_ENTRY, vram, 0))
+        hooks.append(("boot_%08X" % S.BOOT_ENTRY, vram,
+                      "osGetCount_recomp(rdram, ctx); ctx->r%d = ctx->r2;" % reg))
     hooks += [
         ("boot_%08X" % S.BOOT_ENTRY, BOOT_J_MAIN,
          "mt_on_main_loaded(rdram, 0x%08X, 0x%08X, 0x%X);" % (main_rom, S.MAIN_VRAM, MAIN_SIZE)),
@@ -143,6 +150,8 @@ def main():
         'recomp_include = "#include \\"recomp.h\\"\\n#include \\"mt_hooks.h\\""',
         "",
         "[patches]",
+        "# boot cache maintenance after decompressing main: meaningless in the port",
+        "stubs = [ %s ]" % ", ".join('"boot_%08X"' % v for v in BOOT_CACHE_FUNCS),
         "",
     ]
     for func, vram, value in patches:

@@ -38,7 +38,6 @@ struct MtWordPatch {
 #include "mt_files.inl"
 
 constexpr int32_t WINDOW_VRAM = (int32_t)0x10000000;
-constexpr int32_t TLB_209_VRAM = (int32_t)0x50000000;
 constexpr int32_t TLB_209_BUFFER = (int32_t)0x80230000;
 
 // Entry pointers to file 209 held in the data of overlays 86 and 462.
@@ -169,23 +168,65 @@ void mt_file_load_end(uint8_t* rdram, int32_t dest) {
     mt_on_file_loaded(rdram, loading_rom, dest);
 }
 
-// osMapTLB(index, pm, vaddr, evenpaddr, oddpaddr, asid)
+// Software TLB: physical RDRAM offset of every 4 KB page of the user segment, read by the
+// memory access macros (port/include/recomp.h). Unmapped pages keep the original
+// translation, which points past RDRAM and faults.
+uint32_t mt_tlb_pages[0x80000];
+
+static uint32_t unmapped_page(uint32_t page) {
+    return (page << 12) + 0x80000000u;
+}
+
+static const bool tlb_initialized = [] {
+    for (uint32_t page = 0; page < 0x80000; page++) {
+        mt_tlb_pages[page] = unmapped_page(page);
+    }
+    return true;
+}();
+
+// What each of the 32 TLB entries maps, to undo it when the entry is reused.
+struct TlbEntry {
+    uint32_t vaddr;
+    uint32_t size;   // both halves
+};
+static TlbEntry tlb_entries[32];
+
+static void tlb_set_range(uint32_t vaddr, uint32_t size, int64_t paddr) {
+    for (uint32_t off = 0; off < size; off += 0x1000) {
+        uint32_t page = (vaddr + off) >> 12;
+        if (page >= 0x80000) {
+            continue;
+        }
+        mt_tlb_pages[page] = paddr < 0 ? unmapped_page(page) : (uint32_t)(paddr + off);
+    }
+}
+
+// osMapTLB(index, pm, vaddr, evenpaddr, oddpaddr, asid); oddpaddr -1 = invalid
 void osMapTLB_recomp(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t index = (uint32_t)ctx->r4 & 31;
+    uint32_t page_size = ((uint32_t)ctx->r5 + 0x2000) >> 1;   // OS_PM_4K = 0 -> 4 KB
     int32_t vaddr = (int32_t)ctx->r6;
-    uint32_t even_paddr = (uint32_t)ctx->r7;
+    int32_t even_paddr = (int32_t)ctx->r7;
+    int32_t odd_paddr = MEM_W(0x10, ctx->r29);
     if (trace) {
-        fprintf(stderr, "[mt] osMapTLB 0x%08X -> 0x%08X\n", (uint32_t)vaddr, even_paddr);
+        fprintf(stderr, "[mt] osMapTLB %u: 0x%08X -> 0x%08X / 0x%08X, page 0x%X\n", index,
+                (uint32_t)vaddr, (uint32_t)even_paddr, (uint32_t)odd_paddr, page_size);
     }
 
-    if (vaddr == TLB_209_VRAM) {
-        return;  // file 209 is recompiled at its buffer
+    TlbEntry& entry = tlb_entries[index];
+    if (entry.size != 0) {
+        tlb_set_range(entry.vaddr, entry.size, -1);
     }
+    entry = { (uint32_t)vaddr, page_size * 2 };
+    tlb_set_range((uint32_t)vaddr, page_size, even_paddr == -1 ? -1 : (int64_t)(even_paddr & 0x1FFFFFFF));
+    tlb_set_range((uint32_t)vaddr + page_size, page_size, odd_paddr == -1 ? -1 : (int64_t)(odd_paddr & 0x1FFFFFFF));
+
     if (vaddr != WINDOW_VRAM) {
-        fprintf(stderr, "[mt] osMapTLB of unexpected vaddr 0x%08X\n", (uint32_t)vaddr);
-        return;
+        return;  // data windows (0x02000000...) and file 209 (recompiled at its buffer)
     }
+    // per-character module window: swap which module's code is registered at 0x10000000
 
-    int32_t base = (int32_t)(0x80000000u | even_paddr);
+    int32_t base = (int32_t)(0x80000000u | (uint32_t)even_paddr);
     mt_window_base = base;
 
     const MtFile* module = nullptr;
@@ -207,6 +248,21 @@ void osMapTLB_recomp(uint8_t* rdram, recomp_context* ctx) {
     } else {
         fprintf(stderr, "[mt] osMapTLB 0x10000000 -> 0x%08X: no module loaded there\n", (uint32_t)base);
     }
+}
+
+// The game's osVirtualToPhysical (0x80033160, renamed so the runtime's, which ignores the
+// TLB, isn't used): KSEG0/KSEG1 strip the segment, TLB addresses use the page table.
+void osVirtualToPhysical_tlb(uint8_t* rdram, recomp_context* ctx) {
+    uint32_t addr = (uint32_t)ctx->r4;
+    uint32_t phys;
+    if (addr >= 0x80000000u && addr < 0xC0000000u) {
+        phys = addr & 0x1FFFFFFF;
+    } else if (addr < 0x80000000u && mt_tlb_pages[addr >> 12] != unmapped_page(addr >> 12)) {
+        phys = mt_tlb_pages[addr >> 12] + (addr & 0xFFF);
+    } else {
+        phys = addr;
+    }
+    ctx->r2 = (gpr)(int32_t)phys;
 }
 
 } // extern "C"

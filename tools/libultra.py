@@ -44,7 +44,9 @@ LIBULTRA = {
     0x80045D70: "__osInsertTimer",
     # TLB / cop0 / cache
     0x80032BC0: "osMapTLB",
-    0x80033160: "osVirtualToPhysical",
+    # osVirtualToPhysical, renamed: the runtime's ignores the TLB; the port implements it
+    # (ignored in gen_config.py, port/src/mt_hooks.cpp)
+    0x80033160: "osVirtualToPhysical_tlb",
     0x80045E80: "osUnmapTLBAll",
     0x80048850: "osMapTLBRdb",
     0x80048650: "__osGetCause",

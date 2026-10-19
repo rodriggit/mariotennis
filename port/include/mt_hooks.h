@@ -30,6 +30,8 @@ void yield_self(uint8_t* rdram);
 // libultra functions N64Recomp ignores but the runtime does not implement.
 // recomp.h (recomp_context) is included before this header in generated code.
 void osMapTLB_recomp(uint8_t* rdram, recomp_context* ctx);
+// the game's osVirtualToPhysical, TLB-aware (the runtime's ignores TLB mappings)
+void osVirtualToPhysical_tlb(uint8_t* rdram, recomp_context* ctx);
 // pak access from the Transfer Pak code (port/src/mt_pak.cpp): always "no pak"
 void __osPfsGetStatus_recomp(uint8_t* rdram, recomp_context* ctx);
 void __osContRamRead_recomp(uint8_t* rdram, recomp_context* ctx);

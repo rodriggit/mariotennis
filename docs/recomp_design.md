@@ -111,6 +111,27 @@ Candidates were found by scanning for short backward loops whose only memory
 accesses are loads from a fixed (lui-based) address; the other hits are
 libultra hardware polls the runtime replaces.
 
+## Software TLB
+Besides the code windows (0x10000000, 0x50000000), the game reads data through
+TLB mappings: e.g. f31_800CA108 maps 0x02000000–0x02037FFF in 8 KB entries,
+the CPU view of RSP segment 2, so pointers inside models/display lists can be
+followed by the CPU. Those pointers live in data, so they can't be patched.
+
+The runtime reserves 4 GB for RDRAM but backs only 512 MB, and recomp.h maps
+an address to `rdram + (addr - 0x80000000)`, so 0x02xxxxxx faults.
+`port/include/recomp.h` comes first in the include path of the generated code
+and the port: it includes N64Recomp's recomp.h (`#include_next`) and redefines
+the memory macros and unaligned-access helpers to go through `mt_mem_offset`:
+KSEG0 in one compare as before, KSEG1 to the same memory, user addresses
+through `mt_tlb_pages` (one entry per 4 KB page, the physical offset).
+`osMapTLB_recomp` fills it for every mapping (both halves of the entry, page
+size from the page mask) and undoes the previous mapping of a reused index.
+The runtime itself keeps the original recomp.h.
+
+The game's osVirtualToPhysical (0x80033160) uses tlbp/tlbr and the runtime's
+ignores the TLB, so it is named osVirtualToPhysical_tlb, ignored, and
+implemented in the port with the page table.
+
 ## KSEG1 accesses
 The runtime maps only KSEG0 (0x80000000) to RDRAM. A few places use the
 uncached view 0xA0000000: the boot decompressor's clear loop (0x8030008C,

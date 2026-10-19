@@ -53,6 +53,7 @@ IGNORED = [
     "main_80049388",   #   the runtime reports no Controller Pak
     "main_80049554",
     "main_8004960C",
+    "osVirtualToPhysical_tlb",   # TLB-aware version in the port (mt_hooks.cpp)
 ]
 
 

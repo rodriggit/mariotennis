@@ -9,4 +9,4 @@ source/
 
 __pycache__/
 build/
-cmake-build/
+cmake-build*/

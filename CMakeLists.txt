@@ -51,6 +51,12 @@ target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/rt64/src)
 # N64ModernRuntime (librecomp, ultramodern)
 add_subdirectory(${MT_RUNTIME_DIR} ${CMAKE_BINARY_DIR}/N64ModernRuntime)
 
+# fmt 10.2 (bundled by N64Recomp) uses consteval in C++20 in a way clang >= 19 rejects
+# when compiling fmt's own format.cc; as C++17 it falls back to constexpr.
+if (TARGET fmt)
+    set_target_properties(fmt PROPERTIES CXX_STANDARD 17)
+endif()
+
 set(MT_RECOMP_INCLUDES
     ${CMAKE_SOURCE_DIR}/port/include
     ${MT_GENERATED_DIR}

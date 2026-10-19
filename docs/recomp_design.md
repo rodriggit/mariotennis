@@ -70,13 +70,16 @@ Main's CPU code is two ranges: 0x80031000–0x8003DA00 (game) and
 0x80040E60–0x80049A80 (libultra); 0x8003DA00–0x80040E60 is RSP microcode
 (F3DEX2 text starts at 0x8003DA00 with `j 0x04001064`).
 
-Known leftovers (check_syms reports 3):
-- main_80032BA0 (`lui a3,0xA; addiu v0,0x15`): no callers, probably data.
-- main_80033204: memset-style entry that falls through into 0x80033210
-  (the only one with a caller). No callers found for 0x80033204; if one shows
-  up at runtime it needs a hook that calls 0x80033210.
-- main_800420C4 ends in `eret`: libultra's exception handler; it will be named
-  and ignored with the rest of libultra.
+Shared tails: N64Recomp only accepts jumps to a function start or inside the
+same function. A function that jumps or branches into the middle of a later
+function, or falls through into the next one, is extended to cover that code
+(`extend_shared_tails`); the functions then overlap, which is fine because each
+one reads its own words from the ROM. Cases: the memset entries main_80033204
+(falls into 0x80033210) and main_80033210 (`j 0x80033244`, inside
+main_80033240); main_80032BA0 (probably data, no callers); and libultra's
+__osException / __osCleanupThread, which N64Recomp ignores anyway (so does the
+backward jump in send_mesg). check_syms now reports no function without a
+terminator.
 
 ## Port side (port/)
 - `port/src/mt_hooks.cpp`: mt_on_main_loaded, mt_on_file_loaded,

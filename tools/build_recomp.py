@@ -143,6 +143,69 @@ def find_functions(data, vram, text_ranges, name_prefix, seeds=()):
     return funcs
 
 
+def local_jump_targets(w, pc):
+    """Target of j or of a non-linking branch, else None."""
+    op = w >> 26
+    if op == 2:
+        return (pc & 0xF0000000) | ((w & 0x03FFFFFF) << 2)
+    rel = pc + 4 + (((w & 0xFFFF) ^ 0x8000) - 0x8000) * 4
+    if 4 <= op <= 7 or 0x14 <= op <= 0x17:
+        return rel
+    if op == 1 and ((w >> 16) & 31) in (0, 1, 2, 3):
+        return rel
+    if op == 0x11 and ((w >> 21) & 31) == 8:
+        return rel
+    return None
+
+
+def falls_through(W):
+    """True if the function's last real instruction does not end control flow."""
+    L = len(W) - 1
+    while L > 0 and W[L] == 0:
+        L -= 1
+
+    def term(w):
+        return (w >> 26 == 2 or w == ERET or (w >> 26 == 0 and (w & 0x3F) == 0x08)
+                or (w >> 16) == 0x1000)            # j, eret, jr, b
+    return not (term(W[L]) or (L >= 1 and term(W[L - 1])))
+
+
+def extend_shared_tails(data, vram, funcs):
+    """N64Recomp only accepts jumps to a function start or inside the same function.
+    Functions that jump into the middle of a later function, or fall through into the
+    next one (e.g. memset entries sharing a body), are extended to cover that code;
+    overlapping functions are fine since each one reads its own words."""
+    starts = {fv for _, fv, _ in funcs}
+    end_of = {fv: fv + fs for _, fv, fs in funcs}
+    ordered = sorted(starts)
+    out = []
+    for name, fv, fs in funcs:
+        end = fv + fs
+        changed = True
+        while changed:
+            changed = False
+            W = words(data, fv - vram, end - vram + 3)
+            targets = [local_jump_targets(w, fv + i * 4) for i, w in enumerate(W)]
+            if falls_through(W) and end in end_of:
+                end, changed = end_of[end], True
+                continue
+            for t in targets:
+                if t is None or fv <= t < end or t in starts:
+                    continue
+                owner = max((s for s in ordered if s <= t), default=None)
+                if owner is None or t >= end_of[owner]:
+                    continue                       # outside this section: left to N64Recomp
+                if t < fv:
+                    print("  WARNING %s jumps back into %08X (not handled)" % (name, t))
+                    continue
+                end, changed = end_of[owner], True
+                break
+        if end != fv + fs:
+            print("  extended %s: 0x%X -> 0x%X" % (name, fs, end - fv))
+        out.append((name, fv, end - fv))
+    return out
+
+
 def main():
     rom = open(sys.argv[1], "rb").read()
     out_dir = Path(sys.argv[2])
@@ -189,6 +252,7 @@ def main():
     total = 0
     for name, srom, vram, data, ranges in sections:
         funcs = find_functions(data, vram, ranges, name, function_seeds(data, vram, ranges, targets))
+        funcs = extend_shared_tails(data, vram, funcs)
         if name == "main":
             starts = {fv for _, fv, _ in funcs}
             missing = [v for v in LIBULTRA if v not in starts]

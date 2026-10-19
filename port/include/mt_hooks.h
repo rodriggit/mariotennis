@@ -16,8 +16,12 @@ extern int32_t mt_window_base;
 // Boot: main (synth ROM main_rom, size bytes) has been decompressed at vram.
 void mt_on_main_loaded(uint8_t* rdram, uint32_t main_rom, int32_t vram, uint32_t size);
 
-// load_lz (0x80037DFC) finished: file at original ROM offset rom is now at dest.
+// A file at original ROM offset rom is now at dest (load_raw, and mt_file_load_end).
 void mt_on_file_loaded(uint8_t* rdram, uint32_t rom, int32_t dest);
+
+// rom_lz_read (0x80035CC0) entry and exit: decompressing the file at rom into dest.
+void mt_file_load_begin(uint32_t rom);
+void mt_file_load_end(uint8_t* rdram, int32_t dest);
 
 // Runtime scheduling (ultramodern/src/scheduling.cpp): wait for an external event, then
 // run the highest-priority ready thread. Called from the idle thread's loop.

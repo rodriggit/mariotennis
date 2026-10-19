@@ -41,8 +41,13 @@ section in that range as loaded.
 1. **Boot** (function 0x80300050, before `j 0x80031000`): register main with
    `load_overlays(MAIN_SYNTH_ROM, 0x80031000, 0x2AE10)`; the decompressor has
    already written main's code+data into RAM, as on hardware.
-2. **File loader** `load_lz` 0x80037DFC, before its epilogue (s0 = file's
-   original ROM start, s1 = destination): `mt_on_file_loaded(rom, dest)`:
+2. **File loads**: compressed files go through rom_lz_read(rom, dest, size)
+   at 0x80035CC0, called by load_lz (0x80037DFC) and directly by the boot code
+   main_80031290 (file 78). Its entry records the ROM start
+   (`mt_file_load_begin`, per thread: the pointer saved on its stack advances
+   while reading) and its epilogue reports the load with dest from sp+0x210C
+   (`mt_file_load_end`). load_raw (0x80037E48) reports uncompressed loads after
+   its DMA (s0 = ROM start, s1 = dest). Both end in `mt_on_file_loaded(rom, dest)`:
    - map original ROM start → (synthetic rom, size) for code files;
    - unload whatever we previously registered overlapping [dest, dest+size)
      using our own record of exact (ram, size), then `load_overlays`;
@@ -91,14 +96,20 @@ handler and thread functions, so: the copies are harmless RAM writes; the
 main_80031C4C, main_800332DC and main_80032D20 (a wake-up helper only called by
 osRecvMesg/osSendMesg) are `ignored`.
 
-## Idle thread
+## Spin waits
 The runtime is cooperative: a game thread keeps running until it blocks
-(osRecvMesg...) or yields; there are no interrupts to preempt it. NuSys' idle
-thread (main_80031D60, priority 0) spins at 0x80031D90 polling the idle
-callback (only ever set to NULL, by main_80031E04), which starved every other
-thread: one core at 100%, no file ever loaded. A hook at the loop head calls the
-runtime's `yield_self`, which waits for an external event and runs the
-highest-priority ready thread, as an interrupt would on hardware.
+(osRecvMesg...) or yields; there are no interrupts to preempt it, so a loop
+polling a flag set by another thread never ends. gen_config.py's SPIN_WAITS
+hooks each loop head with the runtime's `yield_self`, which waits for an
+external event and runs the highest-priority ready thread, as an interrupt
+would on hardware:
+- 0x80031D90: NuSys' idle thread (main_80031D60, priority 0) polling the idle
+  callback, which is only ever set to NULL (by main_80031E04);
+- 0x80100018: boot overlay 78 waiting for `*(s32*)0x80062608 == 0`.
+
+Candidates were found by scanning for short backward loops whose only memory
+accesses are loads from a fixed (lui-based) address; the other hits are
+libultra hardware polls the runtime replaces.
 
 ## KSEG1 accesses
 The runtime maps only KSEG0 (0x80000000) to RDRAM. A few places use the

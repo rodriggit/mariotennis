@@ -157,6 +157,18 @@ void mt_on_file_loaded(uint8_t* rdram, uint32_t rom, int32_t dest) {
     }
 }
 
+// rom_lz_read advances its ROM pointer while reading, so the start is kept per thread
+// (a load blocks on DMA, and another game thread may load meanwhile).
+static thread_local uint32_t loading_rom = 0;
+
+void mt_file_load_begin(uint32_t rom) {
+    loading_rom = rom;
+}
+
+void mt_file_load_end(uint8_t* rdram, int32_t dest) {
+    mt_on_file_loaded(rdram, loading_rom, dest);
+}
+
 // osMapTLB(index, pm, vaddr, evenpaddr, oddpaddr, asid)
 void osMapTLB_recomp(uint8_t* rdram, recomp_context* ctx) {
     int32_t vaddr = (int32_t)ctx->r6;

@@ -1,0 +1,93 @@
+# Building
+
+You need your own Mario Tennis (USA) ROM (NM8E, rev 0). Nothing from the game is
+in this repository; everything game-derived is generated into `build/`.
+
+## Layout
+
+The pinned upstream checkouts (docs/versions.md) sit next to this repository:
+
+```
+repos/
+  mariotennis/          this repository
+  N64Recomp/            a13e5cf, built: N64Recomp.exe, RSPRecomp.exe
+  N64ModernRuntime/     df7e820, with submodules
+  rt64/                 23cab60, with submodules
+```
+
+Other locations work too: pass `-DMT_RUNTIME_DIR=...` and `-DMT_RT64_DIR=...` to CMake.
+
+## Requirements (Windows)
+
+- Visual Studio with "Desktop development with C++" and **C++ Clang tools for
+  Windows** (the runtime and the generated code need clang-cl).
+- A native CMake first in `PATH` (not MSYS2/devkitPro's).
+- Python 3.11+ with a virtual environment in `.venv` (`pip install rabbitizer==1.16.2 spimdisasm==1.42.4`).
+
+## 1. Generate the recompiler inputs
+
+From `tools/`:
+
+```
+..\.venv\Scripts\python.exe build_recomp.py <ROM> ..\build
+..\.venv\Scripts\python.exe check_syms.py ..\build
+..\.venv\Scripts\python.exe gen_config.py ..\build
+```
+
+This writes `build/recomp.z64` (ROM + decompressed code), `build/syms.toml`,
+`build/recomp.toml`, `build/aspMain.toml` and `build/mt_files.inl`.
+`check_syms.py` must report 0 functions without a terminator and 0 bad jal targets.
+
+Optional check that the port will link (must report 0 undefined functions):
+
+```
+..\.venv\Scripts\python.exe scan_unsupported.py ..\build ..\..\N64Recomp\src\symbol_lists.cpp ..\..\N64ModernRuntime ..\port
+```
+
+## 2. Recompile
+
+Delete `build/RecompiledFuncs` if it exists, then from N64Recomp's output folder:
+
+```
+.\N64Recomp.exe <repos>\mariotennis\build\recomp.toml
+.\RSPRecomp.exe <repos>\mariotennis\build\aspMain.toml
+```
+
+Output: `build/RecompiledFuncs/` and `build/rsp/aspMain.cpp`.
+
+## 3. Build the executable
+
+From this repository, in a Developer PowerShell for Visual Studio:
+
+```
+cmake -S . -B cmake-build -G "Visual Studio 18 2026" -A x64 -T ClangCL
+cmake --build cmake-build --config Release --target MarioTennisRecompiled
+```
+
+CMake downloads the SDL2 2.30.3 development package from the official SDL
+releases. Use `--config RelWithDebInfo` to keep a console with the runtime's logs.
+
+## 4. Run
+
+The first time, pass the ROM (or drop it onto the executable):
+
+```
+.\cmake-build\Release\MarioTennisRecompiled.exe <ROM>
+```
+
+The runtime keeps a copy of the ROM and the EEPROM save in
+`%APPDATA%\mariotennis-recomp\MarioTennisRecompiled\`, so later runs need no argument.
+
+Controls (port 1 also takes the first gamepad; gamepads 2–4 are ports 2–4):
+
+| N64 | Keyboard | Gamepad |
+|---|---|---|
+| Stick | Arrows | Left stick |
+| A / B | X / C | A / B or X |
+| Z | Z | Left trigger |
+| L / R | A / S | LB / RB or right trigger |
+| Start | Enter | Start |
+| C buttons | I J K L | Right stick |
+| D-pad | T F G H | D-pad |
+
+F11 or Alt+Enter toggles fullscreen.

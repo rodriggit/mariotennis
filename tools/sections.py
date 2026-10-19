@@ -18,6 +18,14 @@ MAIN_VRAM = 0x80031000
 # CPU code in main; 0x8003DA00-0x80040E60 is RSP microcode linked into .text
 MAIN_TEXT = [(0x80031000, 0x8003DA00), (0x80040E60, None)]  # None: up to the end of libultra code
 
+# RSP microcode linked into main's .text (NuSys ucode table at 0x80049AC4)
+RSPBOOT_TEXT = 0x8003DA00          # 0xD0 bytes
+ASPMAIN_TEXT = 0x8003DAD0          # audio ucode, 0xC60 bytes, loaded at IMEM 0x1080
+ASPMAIN_TEXT_SIZE = 0xC60
+ASPMAIN_DATA = 0x8005A8C0          # 0x2B0 bytes; starts with the 16-entry command table
+F3DEX2_FIFO_TEXT = 0x8003E730      # data 0x8005AB70
+F3DEX2_XBUS_TEXT = 0x8003FAC0      # data 0x8005AF90
+
 TLB_209_VRAM = 0x50000000
 TLB_209_BUFFER = 0x80230000
 WINDOW_VRAM = 0x10000000

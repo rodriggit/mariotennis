@@ -80,6 +80,7 @@ target_compile_options(RecompiledFuncs PRIVATE
 # Executable
 add_executable(MarioTennisRecompiled
     port/src/main.cpp
+    port/src/crash_handler.cpp
     port/src/mt_hooks.cpp
     port/src/mt_pak.cpp
     port/src/register_overlays.cpp
@@ -114,7 +115,7 @@ if (WIN32)
     FetchContent_MakeAvailable(sdl2)
     target_include_directories(MarioTennisRecompiled PRIVATE ${sdl2_SOURCE_DIR}/include)
     target_link_directories(MarioTennisRecompiled PRIVATE ${sdl2_SOURCE_DIR}/lib/x64)
-    target_link_libraries(MarioTennisRecompiled PRIVATE SDL2 Winmm.lib)
+    target_link_libraries(MarioTennisRecompiled PRIVATE SDL2 Winmm.lib Dbghelp.lib)
 
     # SDL2 and DXC runtime libraries next to the executable
     add_custom_command(TARGET MarioTennisRecompiled POST_BUILD

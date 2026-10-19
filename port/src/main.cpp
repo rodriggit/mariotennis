@@ -32,6 +32,7 @@
 extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* ctx);
 gpr get_entrypoint_address();
 void mt_register_overlays();
+void mt_install_crash_handler();
 extern RspUcodeFunc aspMain;
 
 // XXH3-64 of the big-endian (.z64) ROM: Mario Tennis (USA), NM8E rev 0
@@ -382,6 +383,10 @@ static std::filesystem::path config_folder() {
 }
 
 int main(int argc, char** argv) {
+    mt_install_crash_handler();
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+
     recomp::Version version{};
     recomp::Version::from_string("0.1.0", version);
 

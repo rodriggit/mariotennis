@@ -206,6 +206,14 @@ void mt::renderer::RT64Context::send_dl(const OSTask* task) {
 }
 
 void mt::renderer::RT64Context::update_screen() {
+    // The runtime copies the mode's X scale; apply osViSetXScale's factor as libultra's
+    // __osViSwapContext does (scale field only, offset kept).
+    ur::ViRegs* vi = ur::get_vi_regs();
+    const float factor = mt_vi_x_scale_factor();
+    if (factor != 1.0f) {
+        const uint32_t scale = (uint32_t)(factor * (float)(vi->VI_X_SCALE_REG & 0xFFF)) & 0xFFF;
+        vi->VI_X_SCALE_REG = (vi->VI_X_SCALE_REG & ~0xFFFu) | scale;
+    }
     app->updateScreen();
 }
 

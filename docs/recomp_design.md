@@ -132,6 +132,18 @@ The game's osVirtualToPhysical (0x80033160) uses tlbp/tlbr and the runtime's
 ignores the TLB, so it is named osVirtualToPhysical_tlb, ignored, and
 implemented in the port with the page table.
 
+## VI X scale
+The game's VI mode (set up at 0x800315B8) uses a 384-pixel framebuffer with
+X scale 0x299, so the whole width fills the picture. File 71 also calls
+osViSetXScale(0.7917), which on hardware makes the VI magnify only the left
+~304 columns. The runtime ignores the factor and RT64 always displays the full
+framebuffer width, so that picture showed up shifted left. osViSetXScale
+(0x800464B0) is named osViSetXScale_mt, ignored, and implemented in the port: it
+stores the factor, and RT64Context::update_screen scales VI_X_SCALE_REG with it
+as __osViSwapContext does. A patch to RT64 (patches/rt64) makes the VI renderer
+show only the columns that X scale covers. RT64 still ignores H start, so the
+picture fills the width instead of having the small borders it has on a TV.
+
 ## KSEG1 accesses
 The runtime maps only KSEG0 (0x80000000) to RDRAM. A few places use the
 uncached view 0xA0000000: the boot decompressor's clear loop (0x8030008C,

@@ -54,6 +54,7 @@ IGNORED = [
     "main_80049554",
     "main_8004960C",
     "osVirtualToPhysical_tlb",   # TLB-aware version in the port (mt_hooks.cpp)
+    "osViSetXScale_mt",          # applies the factor, in the port (mt_hooks.cpp)
 ]
 
 

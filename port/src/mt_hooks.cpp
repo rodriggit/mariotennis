@@ -11,6 +11,7 @@
 //  - the per-character modules (TLB 0x10000000) stay at 0x10000000: osMapTLB
 //    swaps which module is registered there and sets mt_window_base, which the
 //    modules' data accesses read (hooks in recomp.toml).
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -263,6 +264,23 @@ void osVirtualToPhysical_tlb(uint8_t* rdram, recomp_context* ctx) {
         phys = addr;
     }
     ctx->r2 = (gpr)(int32_t)phys;
+}
+
+// osViSetXScale (0x800464B0, renamed: the runtime's ignores the factor). File 71 sets 0.79
+// so the VI shows only the left ~304 of the 384 framebuffer columns, stretched over the
+// screen; RT64Context::update_screen applies the factor to VI_X_SCALE_REG.
+static std::atomic<float> vi_x_scale_factor{1.0f};
+
+void osViSetXScale_mt(uint8_t* rdram, recomp_context* ctx) {
+    float factor = ctx->f12.fl;
+    if (trace && factor != vi_x_scale_factor.load()) {
+        fprintf(stderr, "[mt] osViSetXScale %f\n", factor);
+    }
+    vi_x_scale_factor.store(factor);
+}
+
+float mt_vi_x_scale_factor(void) {
+    return vi_x_scale_factor.load();
 }
 
 } // extern "C"

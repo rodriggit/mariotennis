@@ -17,6 +17,10 @@ repos/
 
 Other locations work too: pass `-DMT_RUNTIME_DIR=...` and `-DMT_RT64_DIR=...` to CMake.
 
+RT64 needs the patches in `patches/rt64/` (see docs/versions.md). CMake applies them
+to the RT64 checkout when it configures, skipping any that are already applied, and
+stops with an error if one doesn't apply (checkout not at the pinned commit).
+
 ## Requirements (Windows)
 
 - Visual Studio with "Desktop development with C++" and **C++ Clang tools for

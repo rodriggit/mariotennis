@@ -6,6 +6,9 @@
 
 #include "ultramodern/renderer_context.hpp"
 
+// Factor of the game's last osViSetXScale (port/src/mt_hooks.cpp).
+extern "C" float mt_vi_x_scale_factor(void);
+
 namespace RT64 {
     struct Application;
 }

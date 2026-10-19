@@ -1,0 +1,21 @@
+diff --git a/src/render/rt64_vi_renderer.cpp b/src/render/rt64_vi_renderer.cpp
+index d597d75..50648da 100644
+--- a/src/render/rt64_vi_renderer.cpp
++++ b/src/render/rt64_vi_renderer.cpp
+@@ -105,7 +105,15 @@ namespace RT64 {
+         const hlslpp::float2 hdSize = computeHDSize(sdSize, resolutionScale, downsamplingScale);
+         const hlslpp::float2 windowSize = { float(swapChain->getWidth()), float(swapChain->getHeight()) };
+         const hlslpp::uint2 fbSize = vi.fbSize();
+-        const hlslpp::float2 fbSdRegion = { float(fbSize.x), float(fbSize.y) };
++        hlslpp::float2 fbSdRegion = { float(fbSize.x), float(fbSize.y) };
++
++        // The VI only scans the columns its X scale covers between H start and H end: a game
++        // can magnify the left part of a wider framebuffer (osViSetXScale).
++        const float viVisibleWidth = float(int(vi.hRegion.hEnd) - int(vi.hRegion.hStart)) / vi.xScaleFloat();
++        if ((viVisibleWidth > 0.0f) && (viVisibleWidth < fbSdRegion.x)) {
++            fbSdRegion.x = viVisibleWidth;
++        }
++
+         fbHdRegion = computeHDSize(fbSdRegion, resolutionScale, downsamplingScale);
+ 
+         // Query the VI for the current rendering area.

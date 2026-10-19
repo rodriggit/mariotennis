@@ -1,0 +1,2 @@
+# Patches for dependencies keep the exact bytes (RT64's sources use CRLF).
+patches/** -text

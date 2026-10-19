@@ -38,6 +38,28 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# Local patches to the pinned dependencies (patches/<dep>/*.patch, see docs/versions.md):
+# applied to the checkout at configure time unless they already are.
+find_package(Git REQUIRED)
+function(mt_apply_patches name dir)
+    file(GLOB patches CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/patches/${name}/*.patch")
+    list(SORT patches)
+    foreach(patch ${patches})
+        execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check "${patch}"
+            WORKING_DIRECTORY "${dir}" RESULT_VARIABLE already_applied OUTPUT_QUIET ERROR_QUIET)
+        if (already_applied EQUAL 0)
+            continue()
+        endif()
+        execute_process(COMMAND ${GIT_EXECUTABLE} apply "${patch}"
+            WORKING_DIRECTORY "${dir}" RESULT_VARIABLE result ERROR_VARIABLE error)
+        if (NOT result EQUAL 0)
+            message(FATAL_ERROR "Could not apply ${patch} to ${dir} (is it at the pinned commit?):\n${error}")
+        endif()
+        message(STATUS "Applied ${patch}")
+    endforeach()
+endfunction()
+mt_apply_patches(rt64 "${MT_RT64_DIR}")
+
 # RT64
 set(RT64_STATIC TRUE)
 if (NOT WIN32)

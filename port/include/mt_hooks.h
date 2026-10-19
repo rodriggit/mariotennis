@@ -32,6 +32,8 @@ void yield_self(uint8_t* rdram);
 void osMapTLB_recomp(uint8_t* rdram, recomp_context* ctx);
 // the game's osVirtualToPhysical, TLB-aware (the runtime's ignores TLB mappings)
 void osVirtualToPhysical_tlb(uint8_t* rdram, recomp_context* ctx);
+// the game's osViSetXScale (the runtime's ignores the factor)
+void osViSetXScale_mt(uint8_t* rdram, recomp_context* ctx);
 // pak access from the Transfer Pak code (port/src/mt_pak.cpp): always "no pak"
 void __osPfsGetStatus_recomp(uint8_t* rdram, recomp_context* ctx);
 void __osContRamRead_recomp(uint8_t* rdram, recomp_context* ctx);

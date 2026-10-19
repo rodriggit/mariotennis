@@ -89,7 +89,9 @@ LIBULTRA = {
     0x80046290: "osViSetEvent",
     0x800462F0: "osViSetMode",
     0x80046340: "osViSetSpecialFeatures",
-    0x800464B0: "osViSetXScale",
+    # osViSetXScale, renamed: the runtime's ignores the factor; the port implements it
+    # (ignored in gen_config.py, port/src/mt_hooks.cpp)
+    0x800464B0: "osViSetXScale_mt",
     0x80046580: "osViSetYScale",
     0x800465D0: "osViSwapBuffer",
     0x80046620: "__osViSwapContext",

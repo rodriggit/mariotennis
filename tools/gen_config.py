@@ -122,8 +122,9 @@ def main():
     write_aspmain_config(build, rom, main_rom)
 
     patches, hooks = window_patches(rom, syms)
-    # boot stub: `jr $t2` always goes to BOOT_ENTRY; make it a direct tail call
-    patches.append(("boot_%08X" % S.BOOT_STUB, S.BOOT_STUB_JR,
+    # boot stub: `jr $t2` always goes to BOOT_ENTRY; make it a direct tail call.
+    # N64Recomp renames the entrypoint function before applying patches.
+    patches.append(("recomp_entrypoint", S.BOOT_STUB_JR,
                     0x08000000 | ((S.BOOT_ENTRY >> 2) & 0x03FFFFFF)))
     hooks += [
         ("boot_%08X" % S.BOOT_ENTRY, BOOT_J_MAIN,

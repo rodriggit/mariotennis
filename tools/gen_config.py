@@ -122,8 +122,10 @@ def main():
     write_aspmain_config(build, rom, main_rom)
 
     patches, hooks = window_patches(rom, syms)
+    # boot stub: `jr $t2` always goes to BOOT_ENTRY; make it a direct tail call
+    patches.append(("boot_%08X" % S.BOOT_STUB, S.BOOT_STUB_JR,
+                    0x08000000 | ((S.BOOT_ENTRY >> 2) & 0x03FFFFFF)))
     hooks += [
-        ("boot_%08X" % S.BOOT_ENTRY, S.BOOT_ENTRY, "ctx->r29 = (gpr)(int32_t)0x803FF000;"),
         ("boot_%08X" % S.BOOT_ENTRY, BOOT_J_MAIN,
          "mt_on_main_loaded(rdram, 0x%08X, 0x%08X, 0x%X);" % (main_rom, S.MAIN_VRAM, MAIN_SIZE)),
         ("main_%08X" % LOAD_LZ, LOAD_LZ_EPILOGUE,
@@ -136,12 +138,10 @@ def main():
         'symbols_file_path = "syms.toml"',
         'rom_file_path = "recomp.z64"',
         'output_func_path = "RecompiledFuncs"',
-        "entrypoint = 0x%08X" % S.BOOT_ENTRY,
+        "entrypoint = 0x%08X" % S.BOOT_STUB,
         'recomp_include = "#include \\"recomp.h\\"\\n#include \\"mt_hooks.h\\""',
         "",
         "[patches]",
-        "# boot stub ends in `jr $t2`; the runtime loads the first MB and we enter at BOOT_ENTRY",
-        'ignored = [ "boot_%08X" ]' % S.BOOT_STUB,
         "",
     ]
     for func, vram, value in patches:

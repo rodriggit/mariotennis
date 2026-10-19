@@ -7,8 +7,9 @@ VRAMs come from docs/phase1.md (loader call sites, confirmed by jal analysis).
 BOOT_ROM = 0x1000
 BOOT_VRAM = 0x80300000
 BOOT_TEXT_END = 0x340        # stub, decompressor, cache helpers; compressed main follows at +0x350
-BOOT_STUB = 0x80300000       # clears bss, sets sp, `jr $t2` to BOOT_ENTRY: not recompiled
-BOOT_ENTRY = 0x80300050      # recomp entrypoint: decompresses main, `j 0x80031000`
+BOOT_STUB = 0x80300000       # recomp entrypoint (N64Recomp requires rom 0x1000): clears bss, sets sp
+BOOT_STUB_JR = 0x80300034    # its `jr $t2` (always 0x80300050), patched to a direct `j`
+BOOT_ENTRY = 0x80300050      # decompresses main, `j 0x80031000`
 
 # function starts the generic rules cannot see (reached through jr reg)
 FORCED_STARTS = [BOOT_ENTRY]

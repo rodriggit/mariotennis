@@ -112,7 +112,7 @@ def find_functions(data, vram, text_ranges, name_prefix, seeds=()):
             if sym.sizew:
                 bounds.append((sym.vram, sym.vram + sym.sizew * 4))
     starts = {b[0] for b in bounds}
-    for s in seeds:
+    for s in list(seeds) + S.FORCED_STARTS:
         if any(a < s < e for a, e in bounds):
             starts.add(s)
     # leading entry table: each `j f; nop` stub is its own function (called through

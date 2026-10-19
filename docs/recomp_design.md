@@ -91,6 +91,16 @@ handler and thread functions, so: the copies are harmless RAM writes; the
 main_80031C4C, main_800332DC and main_80032D20 (a wake-up helper only called by
 osRecvMesg/osSendMesg) are `ignored`.
 
+## KSEG1 accesses
+The runtime maps only KSEG0 (0x80000000) to RDRAM. A few places use the
+uncached view 0xA0000000: the boot decompressor's clear loop (0x8030008C,
+0x8030009C), a memset of RDRAM 1–4 MB at startup (0x80031174), and two
+`osVirtualToPhysical(p) + 0xA0000000` (0x800357E0, 0x80035A68). gen_config.py
+patches each `lui rX, 0xA0nn` to `lui rX, 0x80nn` (KSEG1_LUIS). The only
+hardware-register access outside libultra's known functions was osDpSetStatus
+(0x80032C68), now named so the runtime replaces it. Other `lui 0xA…`/`0xB…` in
+game code are float or integer constants (e.g. 0xBF80 = -1.0f, 0xAAAA dividers).
+
 ## Paks
 The runtime emulates no Controller/Transfer Pak (osPfs* return
 PFS_ERR_NOPACK); rumble works through osMotor*/__osMotorAccess. Main's pak

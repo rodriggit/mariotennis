@@ -104,6 +104,7 @@ LIBULTRA = {
     0x80045380: "osSpTaskYield",
     0x800453A0: "osSpTaskYielded",
     0x800486B0: "__osSpGetStatus",
+    0x80032C68: "osDpSetStatus",          # sw a0, DPC_STATUS (0xA410000C)
     # SI, controller, paks
     0x800453F0: "__osSiRawStartDma",
     0x800454A0: "__osSiCreateAccessQueue",

@@ -42,6 +42,28 @@ IGNORED = [
 ]
 
 
+# RDRAM accessed through KSEG1 (0xA0000000, uncached); the runtime only maps KSEG0, so
+# each `lui rX, 0xA0nn` becomes `lui rX, 0x80nn` (same memory, cached view).
+KSEG1_LUIS = [
+    ("boot", 0x8030008C),   # boot clear loop end, 0xA0100000
+    ("boot", 0x8030009C),   # boot clear loop start, 0xA0000400
+    ("main", 0x80031174),   # memset of RDRAM 1-4 MB at 0xA0100000
+    ("main", 0x800357E0),   # osVirtualToPhysical(p) + 0xA0000000
+    ("main", 0x80035A68),   # osVirtualToPhysical(p) + 0xA0000000
+]
+
+
+def kseg1_patches(rom, syms):
+    out = []
+    for sec_name, vram in KSEG1_LUIS:
+        sec = next(s for s in syms["section"] if s["name"] == sec_name)
+        f = next(f for f in sec["functions"] if f["vram"] <= vram < f["vram"] + f["size"])
+        w = struct.unpack_from(">I", rom, sec["rom"] + vram - sec["vram"])[0]
+        assert w >> 26 == 0x0F and (w & 0xFF00) == 0xA000, "%08X is not lui 0xA0nn" % vram
+        out.append((f["name"], vram, w - 0x2000))
+    return out
+
+
 def words_of(rom, sec, f):
     start = sec["rom"] + f["vram"] - sec["vram"]
     return [struct.unpack_from(">I", rom, start + i)[0] for i in range(0, f["size"], 4)]
@@ -147,6 +169,7 @@ def main():
     patches.append(("recomp_entrypoint", S.BOOT_STUB_JR,
                     0x08000000 | ((S.BOOT_ENTRY >> 2) & 0x03FFFFFF)))
     patches.append(("main_80031000", START_THREAD_CALL, 0x0C000000 | ((OS_START_THREAD >> 2) & 0x03FFFFFF)))
+    patches += kseg1_patches(rom, syms)
     # boot entry reads cop0 Count twice (passed to main); N64Recomp only handles Status
     for vram, reg in BOOT_COUNT_READS:
         patches.append(("boot_%08X" % S.BOOT_ENTRY, vram, 0))

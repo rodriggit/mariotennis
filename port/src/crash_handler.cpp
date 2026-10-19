@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <dbghelp.h>
 #include <tlhelp32.h>
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -79,14 +80,44 @@ static LONG WINAPI crash_filter(EXCEPTION_POINTERS* info) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+// Unwinds a suspended thread with RtlVirtualUnwind only: no allocation or locks, so it
+// can't deadlock on a lock the suspended thread holds. Symbols are resolved afterwards.
+static int capture_frames(const CONTEXT& start, DWORD64* frames, int max_frames) {
+    CONTEXT context = start;
+    int count = 0;
+    while (count < max_frames && context.Rip != 0) {
+        frames[count++] = context.Rip;
+        DWORD64 image_base = 0;
+        PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
+        if (function == nullptr) {
+            // leaf function: the return address is at rsp
+            context.Rip = *reinterpret_cast<DWORD64*>(context.Rsp);
+            context.Rsp += 8;
+        } else {
+            PVOID handler_data = nullptr;
+            DWORD64 establisher_frame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, context.Rip, function, &context,
+                             &handler_data, &establisher_frame, nullptr);
+        }
+    }
+    return count;
+}
+
+struct ThreadDump {
+    DWORD id;
+    wchar_t name[64];
+    double cpu_s;
+    DWORD64 frames[24];
+    int num_frames;
+};
+
 static void dump_all_threads() {
-    std::lock_guard lock{ dbghelp_mutex };
-    init_symbols();
+    static ThreadDump dumps[256];
+    int num_dumps = 0;
     DWORD self = GetCurrentThreadId();
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     THREADENTRY32 entry{ sizeof(THREADENTRY32) };
-    fprintf(stderr, "\n[stacks] ---- all threads ----\n");
-    for (BOOL ok = Thread32First(snapshot, &entry); ok; ok = Thread32Next(snapshot, &entry)) {
+    for (BOOL ok = Thread32First(snapshot, &entry); ok && num_dumps < 256; ok = Thread32Next(snapshot, &entry)) {
         if (entry.th32OwnerProcessID != GetCurrentProcessId() || entry.th32ThreadID == self) {
             continue;
         }
@@ -95,25 +126,42 @@ static void dump_all_threads() {
         if (thread == nullptr) {
             continue;
         }
+        ThreadDump& d = dumps[num_dumps++];
+        d.id = entry.th32ThreadID;
+        d.name[0] = 0;
         PWSTR name = nullptr;
-        GetThreadDescription(thread, &name);
+        if (SUCCEEDED(GetThreadDescription(thread, &name)) && name != nullptr) {
+            wcsncpy_s(d.name, name, _TRUNCATE);
+            LocalFree(name);
+        }
         FILETIME created, exited, kernel, user;
         GetThreadTimes(thread, &created, &exited, &kernel, &user);
-        double cpu_s = ((ULARGE_INTEGER{ { user.dwLowDateTime, user.dwHighDateTime } }).QuadPart +
-                        (ULARGE_INTEGER{ { kernel.dwLowDateTime, kernel.dwHighDateTime } }).QuadPart) / 1e7;
-        fprintf(stderr, "[stacks] thread %lu \"%ls\" cpu %.1fs\n", entry.th32ThreadID, name ? name : L"", cpu_s);
-        LocalFree(name);
+        d.cpu_s = ((ULARGE_INTEGER{ { user.dwLowDateTime, user.dwHighDateTime } }).QuadPart +
+                   (ULARGE_INTEGER{ { kernel.dwLowDateTime, kernel.dwHighDateTime } }).QuadPart) / 1e7;
+        d.num_frames = 0;
         if (SuspendThread(thread) != (DWORD)-1) {
             CONTEXT context{};
             context.ContextFlags = CONTEXT_FULL;
             if (GetThreadContext(thread, &context)) {
-                walk_stack(thread, context, 16);
+                d.num_frames = capture_frames(context, d.frames, 24);
             }
             ResumeThread(thread);
         }
         CloseHandle(thread);
     }
     CloseHandle(snapshot);
+
+    // busiest first
+    std::sort(dumps, dumps + num_dumps, [](const ThreadDump& a, const ThreadDump& b) { return a.cpu_s > b.cpu_s; });
+    std::lock_guard lock{ dbghelp_mutex };
+    init_symbols();
+    fprintf(stderr, "\n[stacks] ---- all threads, busiest first ----\n");
+    for (int i = 0; i < num_dumps; i++) {
+        fprintf(stderr, "[stacks] thread %lu \"%ls\" cpu %.1fs\n", dumps[i].id, dumps[i].name, dumps[i].cpu_s);
+        for (int j = 0; j < dumps[i].num_frames; j++) {
+            print_frame(GetCurrentProcess(), dumps[i].frames[j]);
+        }
+    }
     fflush(stderr);
 }
 

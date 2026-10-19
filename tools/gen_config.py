@@ -23,6 +23,12 @@ BOOT_COUNT_READS = [(0x80300058, 18), (0x8030006C, 6)]   # mfc0 s2/a2, Count (v0
 BOOT_CACHE_FUNCS = [0x803002A0, 0x803002D0]              # I-cache invalidate / D-cache writeback
 MAIN_SIZE = 0x2AE10
 
+# NuSys idle thread (main_80031D60): after starting the game threads it spins at priority 0
+# polling the idle callback (always NULL here). The runtime only switches threads when the
+# running one blocks or yields, so the loop head yields until an external event (VI, AI,
+# SP, PI...) and lets any higher-priority thread that became ready run.
+IDLE_LOOP = 0x80031D90
+
 # Startup (main_80031000) starts its first thread with a private copy of osStartThread;
 # call libultra's (0x8003A980), which the runtime reimplements.
 START_THREAD_CALL = 0x80031134
@@ -180,6 +186,7 @@ def main():
          "mt_on_main_loaded(rdram, 0x%08X, 0x%08X, 0x%X);" % (main_rom, S.MAIN_VRAM, MAIN_SIZE)),
         ("main_%08X" % LOAD_LZ, LOAD_LZ_EPILOGUE,
          "mt_on_file_loaded(rdram, (uint32_t)ctx->r16, (int32_t)ctx->r17);"),
+        ("main_80031D60", IDLE_LOOP, "yield_self(rdram);"),
     ]
 
     out = [

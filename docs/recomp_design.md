@@ -91,6 +91,15 @@ handler and thread functions, so: the copies are harmless RAM writes; the
 main_80031C4C, main_800332DC and main_80032D20 (a wake-up helper only called by
 osRecvMesg/osSendMesg) are `ignored`.
 
+## Idle thread
+The runtime is cooperative: a game thread keeps running until it blocks
+(osRecvMesg...) or yields; there are no interrupts to preempt it. NuSys' idle
+thread (main_80031D60, priority 0) spins at 0x80031D90 polling the idle
+callback (only ever set to NULL, by main_80031E04), which starved every other
+thread: one core at 100%, no file ever loaded. A hook at the loop head calls the
+runtime's `yield_self`, which waits for an external event and runs the
+highest-priority ready thread, as an interrupt would on hardware.
+
 ## KSEG1 accesses
 The runtime maps only KSEG0 (0x80000000) to RDRAM. A few places use the
 uncached view 0xA0000000: the boot decompressor's clear loop (0x8030008C,

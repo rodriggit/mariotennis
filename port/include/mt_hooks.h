@@ -19,6 +19,10 @@ void mt_on_main_loaded(uint8_t* rdram, uint32_t main_rom, int32_t vram, uint32_t
 // load_lz (0x80037DFC) finished: file at original ROM offset rom is now at dest.
 void mt_on_file_loaded(uint8_t* rdram, uint32_t rom, int32_t dest);
 
+// Runtime scheduling (ultramodern/src/scheduling.cpp): wait for an external event, then
+// run the highest-priority ready thread. Called from the idle thread's loop.
+void yield_self(uint8_t* rdram);
+
 // libultra functions N64Recomp ignores but the runtime does not implement.
 // recomp.h (recomp_context) is included before this header in generated code.
 void osMapTLB_recomp(uint8_t* rdram, recomp_context* ctx);

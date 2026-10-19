@@ -22,6 +22,10 @@ void mt_on_file_loaded(uint8_t* rdram, uint32_t rom, int32_t dest);
 // libultra functions N64Recomp ignores but the runtime does not implement.
 // recomp.h (recomp_context) is included before this header in generated code.
 void osMapTLB_recomp(uint8_t* rdram, recomp_context* ctx);
+// pak access from the Transfer Pak code (port/src/mt_pak.cpp): always "no pak"
+void __osPfsGetStatus_recomp(uint8_t* rdram, recomp_context* ctx);
+void __osContRamRead_recomp(uint8_t* rdram, recomp_context* ctx);
+void __osContRamWrite_recomp(uint8_t* rdram, recomp_context* ctx);
 
 #ifdef __cplusplus
 }

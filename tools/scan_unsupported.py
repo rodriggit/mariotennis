@@ -1,9 +1,10 @@
 """List instructions N64Recomp cannot recompile in functions it will recompile.
 
-Usage: scan_unsupported.py BUILD_DIR SYMBOL_LISTS_CPP
+Usage: scan_unsupported.py BUILD_DIR SYMBOL_LISTS_CPP [RUNTIME_DIR PORT_DIR]
 Skips functions whose names are in N64Recomp's reimplemented/ignored lists (read from
 src/symbol_lists.cpp of the pinned N64Recomp). Flags cop0 moves other than Status
-(reg 12), TLB ops, eret, cache.
+(reg 12), TLB ops, eret, cache. With RUNTIME_DIR and PORT_DIR, also lists the
+non-recompiled functions that recompiled code calls but neither defines.
 """
 import re
 import struct
@@ -46,3 +47,38 @@ for sec in syms["section"]:
                 found.append("%08X cache" % vram)
         if found:
             print("%-6s %-24s %s" % (sec["name"], f["name"], "; ".join(found[:6]) + (" ..." if len(found) > 6 else "")))
+
+# Calls from recompiled code to functions that are not recompiled (N64Recomp's lists or
+# our config's `ignored`) must be defined by the runtime or the port, or linking fails.
+if len(sys.argv) > 4:
+    runtime, port = Path(sys.argv[3]), Path(sys.argv[4])
+    config = tomllib.loads((build / "recomp.toml").read_text())
+    ignored = set(config["patches"].get("ignored", []))
+    defined = set()
+    for d in (runtime, port):
+        for p in list(d.rglob("*.cpp")) + list(d.rglob("*.c")):
+            defined |= set(re.findall(r"\b(\w+)\s*\(\s*(?:uint8_t\s*\*\s*rdram|RDRAM_ARG)", p.read_text(errors="ignore")))
+    patched = {p["vram"]: p["value"] for p in config["patches"].get("instruction", [])}
+    by_vram = {}
+    for sec in syms["section"]:
+        for f in sec["functions"]:
+            by_vram.setdefault(f["vram"], []).append(f["name"])
+    missing = {}
+    for sec in syms["section"]:
+        for f in sec["functions"]:
+            if f["name"] in skip or f["name"] in ignored:
+                continue
+            start = sec["rom"] + f["vram"] - sec["vram"]
+            for i in range(0, f["size"], 4):
+                pc = f["vram"] + i
+                w = patched.get(pc, struct.unpack_from(">I", rom, start + i)[0])
+                if w >> 26 not in (2, 3):
+                    continue
+                t = (pc & 0xF0000000) | ((w & 0x03FFFFFF) << 2)
+                for name in by_vram.get(t, []):
+                    sym = name + "_recomp" if name in skip else name if name in ignored else None
+                    if sym and sym not in defined:
+                        missing.setdefault(sym, set()).add(f["name"])
+    for sym, callers in sorted(missing.items()):
+        print("undefined %-28s called by %s" % (sym, ", ".join(sorted(callers)[:4])))
+    print("%d undefined functions" % len(missing))

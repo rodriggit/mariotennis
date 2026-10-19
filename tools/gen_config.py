@@ -23,6 +23,24 @@ BOOT_COUNT_READS = [(0x80300058, 18), (0x8030006C, 6)]   # mfc0 s2/a2, Count (v0
 BOOT_CACHE_FUNCS = [0x803002A0, 0x803002D0]              # I-cache invalidate / D-cache writeback
 MAIN_SIZE = 0x2AE10
 
+# Startup (main_80031000) starts its first thread with a private copy of osStartThread;
+# call libultra's (0x8003A980), which the runtime reimplements.
+START_THREAD_CALL = 0x80031134
+OS_START_THREAD = 0x8003A980
+
+# Not recompiled: nothing that is recompiled calls them, and they use libultra internals
+# (thread queues, SI, pak RAM) that the runtime does not provide.
+IGNORED = [
+    "main_80031C4C",   # private osStartThread copy (see START_THREAD_CALL)
+    "main_80032D20",   # wake-up helper, only called by osRecvMesg/osSendMesg
+    "main_800332DC",   # send_mesg/__osEnqueueThread replacements, copied over libultra at boot
+    "main_80048F38",   # Controller Pak id routines (__osRepairPackId, __osCheckPackId,
+    "main_80049224",   #   __osGetId, __osCheckId, __osPfsRWInode by call pattern);
+    "main_80049388",   #   the runtime reports no Controller Pak
+    "main_80049554",
+    "main_8004960C",
+]
+
 
 def words_of(rom, sec, f):
     start = sec["rom"] + f["vram"] - sec["vram"]
@@ -128,6 +146,7 @@ def main():
     # N64Recomp renames the entrypoint function before applying patches.
     patches.append(("recomp_entrypoint", S.BOOT_STUB_JR,
                     0x08000000 | ((S.BOOT_ENTRY >> 2) & 0x03FFFFFF)))
+    patches.append(("main_80031000", START_THREAD_CALL, 0x0C000000 | ((OS_START_THREAD >> 2) & 0x03FFFFFF)))
     # boot entry reads cop0 Count twice (passed to main); N64Recomp only handles Status
     for vram, reg in BOOT_COUNT_READS:
         patches.append(("boot_%08X" % S.BOOT_ENTRY, vram, 0))
@@ -152,6 +171,7 @@ def main():
         "[patches]",
         "# boot cache maintenance after decompressing main: meaningless in the port",
         "stubs = [ %s ]" % ", ".join('"boot_%08X"' % v for v in BOOT_CACHE_FUNCS),
+        "ignored = [ %s ]" % ", ".join('"%s"' % f for f in IGNORED),
         "",
     ]
     for func, vram, value in patches:

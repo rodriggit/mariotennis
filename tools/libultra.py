@@ -127,6 +127,13 @@ LIBULTRA = {
     0x800475C0: "__osContRamWrite",
     0x80048760: "__osContAddressCrc",
     0x800487CC: "__osContDataCrc",
+    # pak status (by call pattern: SI access, request, raw DMA write/read, unpack)
+    0x800489D0: "osPfsIsPlug",
+    0x80048B4C: "__osPfsRequestData",
+    0x80048BF0: "__osPfsGetInitData",
+    0x80048CB0: "__osPfsGetStatus",        # also called by the Transfer Pak code in file 71
+    0x80048DA0: "__osPfsRequestOneChannel",
+    0x80048E34: "__osPfsGetOneChannelData",
     # EEPROM
     0x80041700: "osEepromProbe",
     0x80041780: "osEepromLongWrite",      # write + osSetTimer delay

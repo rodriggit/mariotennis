@@ -77,17 +77,4 @@ The first time, pass the ROM (or drop it onto the executable):
 
 The runtime keeps a copy of the ROM and the EEPROM save in
 `%APPDATA%\mariotennis-recomp\MarioTennisRecompiled\`, so later runs need no argument.
-
-Controls (port 1 also takes the first gamepad; gamepads 2–4 are ports 2–4):
-
-| N64 | Keyboard | Gamepad |
-|---|---|---|
-| Stick | Arrows | Left stick |
-| A / B | X / C | A / B or X |
-| Z | Z | Left trigger |
-| L / R | A / S | LB / RB or right trigger |
-| Start | Enter | Start |
-| C buttons | I J K L | Right stick |
-| D-pad | T F G H | D-pad |
-
-F11 or Alt+Enter toggles fullscreen.
+Controls are in the [README](../README.md#controls).

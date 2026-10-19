@@ -22,6 +22,8 @@ def is_terminator(w):
         return True
     if op == 4 and (w >> 16) & 0x3FF == 0:        # beq zero, zero (b)
         return True
+    if w == 0x42000018:                           # eret
+        return True
     return False
 
 

@@ -14,6 +14,7 @@ import spimdisasm
 
 import sections as S
 from filetable import is_compressed, read_table
+from libultra import LIBULTRA
 from mtlz import decompress
 from reloc_tlb import relocate
 
@@ -31,6 +32,7 @@ def last_code_end(data, start=0, end=None):
 
 
 JR_RA = 0x03E00008
+ERET = 0x42000018
 
 
 def words(data, start, end):
@@ -68,6 +70,8 @@ def starts_after_function_end(W, k):
     `jr ra` + delay slot (optionally followed by nop padding)."""
     if k == 0:
         return True
+    if W[k - 1] == ERET:
+        return True                       # eret has no delay slot
     if W[k - 1] == JR_RA:
         return False                      # k would be the delay slot
     j = k - 1
@@ -185,6 +189,11 @@ def main():
     total = 0
     for name, srom, vram, data, ranges in sections:
         funcs = find_functions(data, vram, ranges, name, function_seeds(data, vram, ranges, targets))
+        if name == "main":
+            starts = {fv for _, fv, _ in funcs}
+            missing = [v for v in LIBULTRA if v not in starts]
+            assert not missing, "libultra names not at a function start: %s" % [hex(v) for v in missing]
+            funcs = [(LIBULTRA.get(fv, fn), fv, fs) for fn, fv, fs in funcs]
         total += len(funcs)
         lines.append("[[section]]")
         lines.append('name = "%s"' % name)

@@ -1,0 +1,85 @@
+# Recompilation design
+
+Based on N64Recomp a13e5cf and N64ModernRuntime df7e820 (read locally at the
+pinned commits, see versions.md).
+
+## Input to N64Recomp: symbol file + "recomp ROM"
+N64Recomp's symbol-file mode (`[input] symbols_file_path` + `rom_file_path`,
+parsed by `Context::from_symbol_file`, src/config.cpp) reads each function's
+words from the given ROM at `section.rom + (func.vram - section.vram)`.
+
+```toml
+[[section]]
+name = "main"
+rom = 0x01000000
+vram = 0x80031000
+size = 0x2AE10
+functions = [ { name = "func_80031000", vram = 0x80031000, size = 0x290 }, ... ]
+# relocs = [...] would make the section relocatable; we don't use them
+```
+
+Our code is compressed, so we build our own **recomp ROM** (build artifact,
+never committed): the original ROM followed by every code section,
+decompressed, from 0x01000000 on (16-byte aligned):
+- boot: rom 0x1000, vram 0x80300000 (original location, uncompressed)
+- main, every code overlay, the 13 modules at 0x80200000, the 20 window
+  modules (vram 0x10000000), and file 209 already relocated to 0x80230000.
+
+Synthetic ROM addresses must stay out of 0x1000–0x101000: the runtime's
+`init` calls `load_overlays(0x1000, entrypoint, 1 MiB)` and would register any
+section in that range as loaded.
+
+## Runtime overlay API (librecomp/src/overlays.cpp)
+- `load_overlays(rom, ram, size)`: registers every section whose rom lies in
+  [rom, rom+size) as loaded at `ram + (section.rom - rom)`.
+- `unload_overlays(ram, size)`: unregisters sections overlapping the range;
+  **exits if a section is only partially covered**.
+- `get_function(addr)`: exact lookup for jalr / function pointers; exits if
+  missing.
+
+## Hooks we add
+1. **Boot** (function 0x80300050, before `j 0x80031000`): register main with
+   `load_overlays(MAIN_SYNTH_ROM, 0x80031000, 0x2AE10)`; the decompressor has
+   already written main's code+data into RAM, as on hardware.
+2. **File loader** `load_lz` 0x80037DFC, before its epilogue (s0 = file's
+   original ROM start, s1 = destination): `mt_on_file_loaded(rom, dest)`:
+   - map original ROM start → (synthetic rom, size) for code files;
+   - unload whatever we previously registered overlapping [dest, dest+size)
+     using our own record of exact (ram, size), then `load_overlays`;
+   - file 209: patch its 33 pointer words in RAM (0x5000xxxx → 0x8023xxxx);
+   - files 86/462: patch the two 209 entry pointers (0x80138090/94,
+     0x8011FCA0/A4) to 0x80230008/0x80230000;
+   - window modules: remember which module sits in which buffer.
+3. **osMapTLB_recomp** (our implementation): vaddr 0x10000000 → set
+   `window_base`, unload the previous module at 0x10000000, load the module
+   held in that buffer at 0x10000000. vaddr 0x50000000 → nothing.
+4. **Window modules**: per module, 5 instruction patches (`lui rX, 0x1000` →
+   nop) + 5 hooks (`ctx->rX = (gpr)(int32_t)window_base;`).
+
+## Function boundaries
+`tools/build_recomp.py ROM build/` writes build/recomp.z64 and build/syms.toml
+(2257 functions in 46 sections); `tools/check_syms.py build/` checks that every
+function ends in a jump. Method: spimdisasm per CPU-code range, then split at
+starts it misses because they are only reached through pointers: leading
+`j` entry tables (each stub is a function), jal targets and lui/addiu pointers
+from any section, and `addiu sp,-N` prologues — a split is accepted only
+right after `jr ra` + delay slot. Nop padding is merged into the previous
+function.
+
+Main's CPU code is two ranges: 0x80031000–0x8003DA00 (game) and
+0x80040E60–0x80049A80 (libultra); 0x8003DA00–0x80040E60 is RSP microcode
+(F3DEX2 text starts at 0x8003DA00 with `j 0x04001064`).
+
+Known leftovers (check_syms reports 3):
+- main_80032BA0 (`lui a3,0xA; addiu v0,0x15`): no callers, probably data.
+- main_80033204: memset-style entry that falls through into 0x80033210
+  (the only one with a caller). No callers found for 0x80033204; if one shows
+  up at runtime it needs a hook that calls 0x80033210.
+- main_800420C4 ends in `eret`: libultra's exception handler; it will be named
+  and ignored with the rest of libultra.
+
+## Still to do
+- Identify libultra functions in main by name: N64Recomp replaces calls to
+  the names in its reimplemented/ignored lists (osCreateThread, osPiStartDma,
+  osRecvMesg, ...) with runtime implementations, so they must be named.
+- Audio microcode: locate it and recompile with RSPRecomp.

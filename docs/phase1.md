@@ -51,9 +51,13 @@ Files 17, 33, 99–106, 108, 147, 163, 178, 200, 473, 774, 965, 989, 1042:
 ## Risks for N64Recomp
 1. **TLB-mapped code (file 209 at 0x50000000) — solved, see below.**
 2. **TLB code window at 0x10000000 — plan below.**
-3. The runtime's osGetMemSize always returns 8 MiB (Expansion Pak present).
-   The game may behave differently than on a 4 MiB console; file 35
-   (built for 0x80500000) may be an Expansion-Pak-only path. Check at runtime.
+3. The runtime's osGetMemSize always returns 8 MiB (Expansion Pak present),
+   but the game never asks: no reads of osMemSize (0x80000318), no
+   osGetMemSize (its 0x12345678 probe pattern only appears as heap-block magic
+   at 0x8003818C/0x80038200 and in file 19), no 4/8 MiB compares in main.
+   The port targets 4 MiB behaviour (the original needs no Expansion Pak);
+   nothing to patch. File 35 (built for 0x80500000) is not reached through a
+   memory check — likely dead/debug code.
 4. Overlays sharing VRAM (86/462, 285/454, 71 overlapping) — supported by
    N64Recomp as separate sections, as long as the loader hook reports them.
 

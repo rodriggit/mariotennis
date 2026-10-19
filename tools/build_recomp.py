@@ -140,6 +140,19 @@ def find_functions(data, vram, text_ranges, name_prefix, seeds=()):
                     funcs[-1] = (name, fa, fs + (b - a))
                     continue
             funcs.append(("%s_%08X" % (name_prefix, a), a, b - a))
+    # a function may begin with nops (e.g. 0x800382F0 `nop; mul.s ...`): a call target in
+    # the padding moves the next function's start back to it
+    for i in range(1, len(funcs)):
+        _, pa, ps = funcs[i - 1]
+        _, a, s = funcs[i]
+        if pa + ps != a or a in seeds:            # a itself is referenced: keep it
+            continue
+        pad = [t for t in seeds if pa < t < a and all(w == 0 for w in words(data, t - vram, a - vram + 3))]
+        if pad:
+            t = min(pad)
+            print("  %s_%08X starts at %08X (leading nops)" % (name_prefix, a, t))
+            funcs[i - 1] = (funcs[i - 1][0], pa, t - pa)
+            funcs[i] = ("%s_%08X" % (name_prefix, t), t, s + a - t)
     return funcs
 
 

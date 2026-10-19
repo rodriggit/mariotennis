@@ -34,9 +34,9 @@ gpr get_entrypoint_address();
 void mt_register_overlays();
 extern RspUcodeFunc aspMain;
 
-// XXH3-64 of the big-endian (.z64) ROM: Mario Tennis (USA), NM8E rev 0.
-// 0 until known: with a mismatching ROM the program prints the hash it computed.
-constexpr uint64_t MT_ROM_HASH = 0;
+// XXH3-64 of the big-endian (.z64) ROM: Mario Tennis (USA), NM8E rev 0
+// (SHA-1 999047f07cec931ffbdcc7b33b8502ef602807ee). A mismatching ROM prints its hash.
+constexpr uint64_t MT_ROM_HASH = 0x4E535EA5C4BB222FULL;
 static const std::u8string game_id = u8"mariotennis.n64.us.1.0";
 
 static SDL_Window* window = nullptr;

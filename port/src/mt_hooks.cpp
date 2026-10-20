@@ -307,6 +307,94 @@ float mt_menu_toad_x(float x, int32_t slide) {
     return x + (float(slide) / 8.0f) * out_x * (wide - 1.0f);
 }
 
+// The main menu's coin of the selected character (3D, orthographic: 1 unit = 1 pixel) sits
+// in that character's slot of the icon row, x = slot + 16 - 152 from the picture's center.
+// The row is parked past the right edge (slots from x = 324), where the scissor hides the 2D
+// icons even in a wide picture but not the coin, which RT64 draws with the wide viewport.
+// When its slot is past the 4:3 edge (x >= 304), it is pushed past the wide picture too.
+float mt_menu_coin_x(float x) {
+    const float wide = mt_widescreen_factor();
+    if ((wide <= 1.0f) || (x < 304.0f + 16.0f - 152.0f)) {
+        return x;
+    }
+    return x + 304.0f * wide;
+}
+
+// RT64 extended GBI (rt64/include/rt64_extended_gbi.h), opcode 0x64 once enabled through
+// the G_SPNOOP hook; RT64 disables it again at the start of every frame.
+namespace {
+constexpr uint32_t kExOpcode = 0x64;
+constexpr uint32_t kExEnable0 = 0xE0525464, kExEnable1 = 0x10000000 | kExOpcode;
+constexpr uint32_t kExSetScissor = 0x05, kExSetRectAlign = 0x06;
+constexpr uint32_t kOriginLeft = 0x0, kOriginRight = 0x400, kOriginNone = 0x800;
+
+// The menus draw into a 384-wide color image, of which the VI shows the left 304 columns
+// (osViSetXScale), with the scissor at (0, 0)-(304, 224).
+constexpr int32_t kMenuFbWidth = 384, kMenuWidth = 304, kMenuHeight = 224;
+
+bool menu_banner_aligned = false;
+
+int32_t gfx_put(uint8_t* rdram, int32_t gfx, uint32_t w0, uint32_t w1) {
+    MEM_W(0, gfx) = (int32_t)w0;
+    MEM_W(4, gfx) = (int32_t)w1;
+    return gfx + 8;
+}
+
+int32_t gfx_ex(uint8_t* rdram, int32_t gfx, uint32_t op, uint32_t w1) {
+    return gfx_put(rdram, gfx, (kExOpcode << 24) | op, w1);
+}
+
+uint32_t pack16(int32_t hi, int32_t lo) {
+    return ((uint32_t(hi) & 0xFFFF) << 16) | (uint32_t(lo) & 0xFFFF);
+}
+
+// The menus' scissor with the given origins (RT64 keeps the origins of the last one set:
+// a scissor pop would not restore them).
+int32_t gfx_menu_scissor(uint8_t* rdram, int32_t gfx, uint32_t left, uint32_t right) {
+    const int32_t lrx = (right == kOriginRight) ? (kMenuWidth - kMenuFbWidth) : kMenuWidth;
+    gfx = gfx_ex(rdram, gfx, kExSetScissor, (left << 2) | (right << 14));
+    return gfx_put(rdram, gfx, pack16(0, 0), pack16(lrx * 4, kMenuHeight * 4));
+}
+} // namespace
+
+// The banners are 192x24 texrects in three 8-line strips, top then bottom per strip: the top
+// one from x = 0, the bottom one up to x = 304 (both shifted while they slide in). RT64's
+// expand keeps 2D at its pixel size inside the widened picture, so they end up short of the
+// edges. Each strip is aligned to the left edge of the picture instead (x = 0 there), the
+// bottom one moved right by the extra width so it still ends at the right edge. RT64 maps
+// the frame's scissor like a regular rect, which would cut them at the old edges, so while
+// they draw the scissor's right side is taken from the color image's right edge: still
+// (0, 0)-(304, 224) in native coordinates, past the right edge of the picture on screen.
+// The plain scissor is set back right after them: the menus draw things past column 304 of
+// the color image (hidden by the VI) that it must keep out of the wide picture.
+int32_t mt_menu_banner(uint8_t* rdram, int32_t gfx, int32_t part, int32_t strip) {
+    if (part == 2) {
+        if (!menu_banner_aligned) {
+            return gfx;
+        }
+        menu_banner_aligned = false;
+        gfx = gfx_put(rdram, gfx, kExEnable0, kExEnable1);
+        gfx = gfx_ex(rdram, gfx, kExSetRectAlign, kOriginNone | (kOriginNone << 12));
+        gfx = gfx_put(rdram, gfx, 0, 0);
+        return gfx_menu_scissor(rdram, gfx, kOriginNone, kOriginNone);
+    }
+    const float wide = mt_widescreen_factor();
+    if ((part == 0) && (strip == 0)) {
+        if (wide <= 1.0f) {
+            return gfx;
+        }
+        menu_banner_aligned = true;
+        gfx = gfx_put(rdram, gfx, kExEnable0, kExEnable1);
+        gfx = gfx_menu_scissor(rdram, gfx, kOriginLeft, kOriginRight);
+    }
+    if (!menu_banner_aligned) {
+        return gfx;
+    }
+    const int32_t offset = (part == 1) ? (int32_t)std::lround(kMenuWidth * 4 * (wide - 1.0f)) : 0;
+    gfx = gfx_ex(rdram, gfx, kExSetRectAlign, kOriginLeft | (kOriginLeft << 12));
+    return gfx_put(rdram, gfx, pack16(offset, 0), pack16(offset, 0));
+}
+
 // After the NuSys EEPROM manager's osEepromLongRead/Write call: a1 = block, a2 = buffer,
 // a3 = bytes, v0 = result. Prints the access with its data (MT_TRACE_EEPROM=1).
 void mt_eeprom_trace(uint8_t* rdram, recomp_context* ctx, int write) {

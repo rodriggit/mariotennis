@@ -363,13 +363,21 @@ void mt::renderer::RT64Context::update_screen() {
         wide = std::max(1.0f, (float(width) / float(height)) / (4.0f / 3.0f));
     }
     widescreen_factor.store(wide, std::memory_order_relaxed);
-    // The runtime copies the mode's X scale; apply osViSetXScale's factor as libultra's
-    // __osViSwapContext does (scale field only, offset kept).
+    // The runtime copies the mode's X scale; apply osViSetXScale's factor (scale field only,
+    // offset kept). libultra's __osViSwapContext scales the mode's value, but the game's mode
+    // (384 wide, H 128..725, scale 0x299) then scans 306.7 columns for the menus' 304/384:
+    // past what they draw, a dark stripe on the right. The scale is instead the one that
+    // scans width * factor columns (rounded down).
     ur::ViRegs* vi = ur::get_vi_regs();
     const float factor = mt_vi_x_scale_factor();
     if (factor != 1.0f) {
-        const uint32_t scale = (uint32_t)(factor * (float)(vi->VI_X_SCALE_REG & 0xFFF)) & 0xFFF;
-        vi->VI_X_SCALE_REG = (vi->VI_X_SCALE_REG & ~0xFFFu) | scale;
+        const int32_t h_span = int32_t(vi->VI_H_START_REG & 0x3FF) - int32_t((vi->VI_H_START_REG >> 16) & 0x3FF);
+        const uint32_t width = vi->VI_WIDTH_REG & 0xFFF;
+        uint32_t scale = (uint32_t)(factor * (float)(vi->VI_X_SCALE_REG & 0xFFF));
+        if ((h_span > 0) && (width > 0)) {
+            scale = (uint32_t)std::floor(float(width) * factor * 1024.0f / float(h_span));
+        }
+        vi->VI_X_SCALE_REG = (vi->VI_X_SCALE_REG & ~0xFFFu) | (scale & 0xFFF);
     }
     app->updateScreen();
     // every ~10 s, so a crash or a killed process keeps what this session compiled

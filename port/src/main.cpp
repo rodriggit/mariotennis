@@ -539,7 +539,9 @@ static ultramodern::renderer::GraphicsConfig load_graphics() {
     graphics.api_option = ur::GraphicsApi(pick("api", {
         { "auto", int(ur::GraphicsApi::Auto) }, { "d3d12", int(ur::GraphicsApi::D3D12) },
         { "vulkan", int(ur::GraphicsApi::Vulkan) } }, int(ur::GraphicsApi::Auto)));
-    graphics.hr_option = ur::HUDRatioMode::Original;
+    // extended GBI origins follow the window's edges (only the menu banners use them,
+    // mt_menu_banner); without expand the window is 4:3 and they change nothing
+    graphics.hr_option = ur::HUDRatioMode::Full;
     graphics.ar_option = ur::AspectRatio(pick("aspect_ratio", {
         { "original", int(ur::AspectRatio::Original) }, { "expand", int(ur::AspectRatio::Expand) } },
         int(ur::AspectRatio::Original)));

@@ -43,6 +43,14 @@ int32_t mt_cull_half_width(int32_t half_width);
 // f71_800ECBE4: the menus' Toad x after its character-select slide (slide 0..8, 8 = fully
 // out); pushed further out when aspect_ratio = expand widens the picture
 float mt_menu_toad_x(float x, int32_t slide);
+// f71_800FA614: the x of the main menu's selected-character coin (from the picture's
+// center); moved past the wide picture when its slot is off the 4:3 one
+float mt_menu_coin_x(float x);
+// f71_800EBA18 / f71_801001DC: the "MARIO TENNIS" banners of the main menu and play mode.
+// Writes RT64 extended GBI commands at gfx before a banner strip's texrect (part 0 top,
+// 1 bottom; strip 0..2) or after the last one (part 2) and returns the new gfx pointer,
+// so with aspect_ratio = expand the banners sit against the edges of the wide picture
+int32_t mt_menu_banner(uint8_t* rdram, int32_t gfx, int32_t part, int32_t strip);
 // pak access from the Transfer Pak code (port/src/mt_pak.cpp): always "no pak"
 void __osPfsGetStatus_recomp(uint8_t* rdram, recomp_context* ctx);
 void __osContRamRead_recomp(uint8_t* rdram, recomp_context* ctx);

@@ -90,10 +90,13 @@ A release zip is built from a **Release** build (no console) of a tagged commit:
 1. Set the version in `port/src/main.cpp` (`Version::from_string`) and commit.
 2. Tag that commit: `git tag v0.1.0`.
 3. Build the Release configuration. With the Visual Studio generator, `--config Release`
-   as in step 3. With Ninja, use a separate build folder:
+   as in step 3. With Ninja, use a separate build folder and name Visual Studio's LLVM
+   tools explicitly, so that no other `ld`/`ar` in `PATH` (MSYS2, devkitPro) is picked
+   up (adjust `$llvm` to your Visual Studio edition):
 
    ```
-   cmake -S . -B cmake-build-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
+   $llvm = "C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/VC/Tools/Llvm/x64/bin"
+   cmake -S . -B cmake-build-release -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_C_COMPILER=$llvm/clang-cl.exe" "-DCMAKE_CXX_COMPILER=$llvm/clang-cl.exe" "-DCMAKE_LINKER=$llvm/lld-link.exe" "-DCMAKE_AR=$llvm/llvm-lib.exe" "-DCMAKE_MT=$llvm/llvm-mt.exe"
    cmake --build cmake-build-release --target MarioTennisRecompiled
    ```
 

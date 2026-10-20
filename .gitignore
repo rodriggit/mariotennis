@@ -10,3 +10,10 @@ source/
 __pycache__/
 build/
 cmake-build*/
+
+# debugging output (MT_PROFILE, F9 RDRAM dumps, logs)
+mt_profile.txt
+rdram_*.bin
+hd*_0x*.bin
+hd*_0x*.raw
+*_log.txt

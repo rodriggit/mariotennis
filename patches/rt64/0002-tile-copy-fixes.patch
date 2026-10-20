@@ -1,0 +1,68 @@
+diff --git a/src/hle/rt64_framebuffer_manager.cpp b/src/hle/rt64_framebuffer_manager.cpp
+index 18ff53d..daa1cb3 100644
+--- a/src/hle/rt64_framebuffer_manager.cpp
++++ b/src/hle/rt64_framebuffer_manager.cpp
+@@ -145,6 +145,10 @@ namespace RT64 {
+ 
+             const RenderTextureDesc textureDesc = RenderTextureDesc::Texture2D(tileCopy.textureWidth, tileCopy.textureHeight, 1, RenderTarget::colorBufferFormat(targetManager.usesHDR), textureFlags);
+             tileCopy.texture = renderWorker->device->createTexture(textureDesc);
++
++            // Render targets must be initialized with a clear before they're drawn to. Some drivers (e.g. Intel on D3D12)
++            // will otherwise keep showing stale contents on pixels that the copy writes.
++            tileCopy.textureNeedsClear = true;
+         }
+ 
+         if (tileCopy.framebuffer == nullptr) {
+@@ -235,6 +239,8 @@ namespace RT64 {
+         copyRegion.descriptorSet = colorTarget.textureCopyDescSet->get();
+         copyRegion.pushConstants.uvScroll = { float(tileCopy.left), float(tileCopy.top) };
+         copyRegion.pushConstants.uvScale = { float(srcRight - tileCopy.left), float(srcBottom - tileCopy.top) };
++        copyRegion.clearFirst = tileCopy.textureNeedsClear;
++        tileCopy.textureNeedsClear = false;
+         cmdListCopies.cmdListCopyRegions.push_back(copyRegion);
+     }
+     
+@@ -452,6 +458,12 @@ namespace RT64 {
+             }
+         }
+ 
++        // The load runs past the framebuffer's last row. The rows below it only exist in RDRAM (e.g. what an earlier
++        // fill at the same address left there), so the copy can't stand in for the whole texture.
++        if (outTile.bottom > fb->height) {
++            return false;
++        }
++
+         // Clamp the tile to the framebuffer's dimensions and the image row ranges found.
+         outTile.top = std::max(outTile.top, fbMinRow);
+         outTile.right = std::min(outTile.right, fb->width);
+@@ -956,6 +968,10 @@ namespace RT64 {
+             RenderDescriptorSet *lastDescriptorSet = nullptr;
+             for (const CommandListCopyRegion &copy : cmdListCopies.cmdListCopyRegions) {
+                 renderWorker->commandList->setFramebuffer(copy.dstFramebuffer);
++                if (copy.clearFirst) {
++                    renderWorker->commandList->clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 0.0f));
++                }
++
+                 renderWorker->commandList->setViewports(RenderViewport(0.0f, 0.0f, copy.pushConstants.uvScale.x, copy.pushConstants.uvScale.y));
+                 renderWorker->commandList->setScissors(RenderRect(0, 0, std::lround(copy.pushConstants.uvScale.x), std::lround(copy.pushConstants.uvScale.y)));
+                 if (copy.descriptorSet != lastDescriptorSet) {
+diff --git a/src/hle/rt64_framebuffer_manager.h b/src/hle/rt64_framebuffer_manager.h
+index 9b9aada..e11782e 100644
+--- a/src/hle/rt64_framebuffer_manager.h
++++ b/src/hle/rt64_framebuffer_manager.h
+@@ -95,6 +95,7 @@ namespace RT64 {
+             bool readColorFromStorage = false;
+             bool readDepthFromStorage = false;
+             bool ignore = false;
++            bool textureNeedsClear = false;
+             std::unique_ptr<RenderFramebuffer> framebuffer;
+         };
+ 
+@@ -121,6 +122,7 @@ namespace RT64 {
+             RenderFramebuffer *dstFramebuffer;
+             RenderDescriptorSet *descriptorSet;
+             interop::TextureCopyCB pushConstants;
++            bool clearFirst;
+         };
+ 
+         struct CommandListCopies {

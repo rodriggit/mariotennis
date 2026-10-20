@@ -1,9 +1,11 @@
 // RT64 renderer for the runtime. Adapted from Zelda64Recomp v1.2.2
 // (src/main/rt64_render_context.cpp, GPL-3.0) without its texture packs, mods and UI hooks.
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 #define HLSL_CPU
 #include "hle/rt64_application.h"
@@ -125,8 +127,12 @@ static ur::GraphicsApi map_graphics_api(RT64::UserConfiguration::GraphicsAPI api
     }
 }
 
+// RDRAM base (physical address p is at mt_rdram + p), for the watchpoints (MT_WATCH).
+std::atomic<uint8_t*> mt_rdram{nullptr};
+
 mt::renderer::RT64Context::RT64Context(uint8_t* rdram, ur::WindowHandle window_handle, bool developer_mode) {
     static unsigned char dummy_rom_header[0x40];
+    mt_rdram.store(rdram);
 
     RT64::Application::Core core{};
 #if defined(_WIN32)
@@ -176,6 +182,11 @@ mt::renderer::RT64Context::RT64Context(uint8_t* rdram, ur::WindowHandle window_h
     const ur::GraphicsConfig& config = ur::get_graphics_config();
     set_application_user_config(app.get(), config);
     app->userConfig.developerMode = developer_mode;
+    // The game renders sprites (crowd, line judges), shadows and hit effects into small
+    // framebuffers and samples them as textures. RT64 copies those on the GPU at full
+    // resolution; patches/rt64/0002 fixes the stale contents those copies showed.
+    // MT_RT64_RDRAM_COPIES=1 samples them from RDRAM instead (slower, native resolution).
+    app->emulatorConfig.framebuffer.copyWithGPU = std::getenv("MT_RT64_RDRAM_COPIES") == nullptr;
     switch (config.api_option) {
         case ur::GraphicsApi::D3D12:  app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::D3D12; break;
         case ur::GraphicsApi::Vulkan: app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Vulkan; break;
@@ -199,13 +210,39 @@ mt::renderer::RT64Context::RT64Context(uint8_t* rdram, ur::WindowHandle window_h
 
 mt::renderer::RT64Context::~RT64Context() = default;
 
+// Frame counters for the profiler (MT_PROFILE, crash_handler.cpp).
+std::atomic<uint32_t> mt_dl_count{0};
+std::atomic<uint32_t> mt_vi_count{0};
+
+// F10 (main.cpp): print the framebuffers RT64 tracks, after the next display list.
+std::atomic<bool> mt_dump_framebuffers{false};
+
+static void print_framebuffers(RT64::State& state) {
+    std::vector<const RT64::Framebuffer*> fbs;
+    for (const auto& [address, fb] : state.framebufferManager.framebuffers) {
+        fbs.push_back(&fb);
+    }
+    std::sort(fbs.begin(), fbs.end(), [](const auto* a, const auto* b) { return a->addressStart < b->addressStart; });
+    fprintf(stderr, "[fb] %zu framebuffers tracked by RT64:\n", fbs.size());
+    for (const RT64::Framebuffer* fb : fbs) {
+        fprintf(stderr, "[fb]   0x%06X-0x%06X  width %4u  siz %u  maxHeight %3u  RAMBytes 0x%05X  lastWrite %llu  rdramChanged %d\n",
+                fb->addressStart, fb->addressEnd, fb->width, fb->siz, fb->maxHeight, fb->RAMBytes,
+                (unsigned long long)fb->lastWriteTimestamp, fb->rdramChanged);
+    }
+}
+
 void mt::renderer::RT64Context::send_dl(const OSTask* task) {
+    mt_dl_count.fetch_add(1, std::memory_order_relaxed);
     app->state->rsp->reset();
     app->interpreter->loadUCodeGBI(task->t.ucode & 0x3FFFFFF, task->t.ucode_data & 0x3FFFFFF, true);
     app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
+    if (mt_dump_framebuffers.exchange(false)) {
+        print_framebuffers(*app->state);
+    }
 }
 
 void mt::renderer::RT64Context::update_screen() {
+    mt_vi_count.fetch_add(1, std::memory_order_relaxed);
     // The runtime copies the mode's X scale; apply osViSetXScale's factor as libultra's
     // __osViSwapContext does (scale field only, offset kept).
     ur::ViRegs* vi = ur::get_vi_regs();
@@ -239,6 +276,11 @@ bool mt::renderer::RT64Context::update_config(const ur::GraphicsConfig& old_conf
 }
 
 void mt::renderer::RT64Context::enable_instant_present() {
+    // Early presents bypass the inspector's pause (RT64 State::updateScreen), so keep the
+    // default presentation in developer mode.
+    if (app->userConfig.developerMode) {
+        return;
+    }
     app->enhancementConfig.presentation.mode = RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly;
     app->updateEnhancementConfig();
 }

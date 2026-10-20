@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -321,6 +322,23 @@ static void toggle_fullscreen() {
     ultramodern::renderer::set_graphics_config(config);
 }
 
+// F9: write the 8 MB of RDRAM to rdram_<n>.bin in the current folder, as the recompiled
+// code stores it (32-bit words in host order: N64 byte address a is at file offset a ^ 3).
+extern std::atomic<uint8_t*> mt_rdram;   // rt64_context.cpp
+extern std::atomic<bool> mt_dump_framebuffers;
+
+static void dump_rdram() {
+    static int count = 0;
+    uint8_t* rdram = mt_rdram.load();
+    if (rdram == nullptr) {
+        return;
+    }
+    const std::string name = "rdram_" + std::to_string(count++) + ".bin";
+    std::ofstream out(name, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(rdram), 0x800000);
+    fprintf(stderr, "[mt] RDRAM written to %s\n", name.c_str());
+}
+
 static void update_gfx(void*) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -338,6 +356,10 @@ static void update_gfx(void*) {
                 if (event.key.keysym.scancode == SDL_SCANCODE_F11 ||
                     (event.key.keysym.scancode == SDL_SCANCODE_RETURN && (event.key.keysym.mod & KMOD_ALT))) {
                     toggle_fullscreen();
+                } else if (event.key.keysym.scancode == SDL_SCANCODE_F9) {
+                    dump_rdram();
+                } else if (event.key.keysym.scancode == SDL_SCANCODE_F10) {
+                    mt_dump_framebuffers.store(true);
                 }
                 break;
         }
@@ -445,11 +467,16 @@ int main(int argc, char** argv) {
     }
 
     ultramodern::renderer::GraphicsConfig graphics{};
-    graphics.developer_mode = false;
-    graphics.res_option = ultramodern::renderer::Resolution::Auto;
+    // MT_RT64_DEV=1: RT64's developer mode (F1 inspector, RDP warnings on the console)
+    graphics.developer_mode = std::getenv("MT_RT64_DEV") != nullptr;
+    // MT_RT64_RES1=1: render at the original resolution (debugging RT64's framebuffer copies)
+    graphics.res_option = std::getenv("MT_RT64_RES1") != nullptr ? ultramodern::renderer::Resolution::Original
+                                                               : ultramodern::renderer::Resolution::Auto;
     graphics.wm_option = ultramodern::renderer::WindowMode::Windowed;
     graphics.hr_option = ultramodern::renderer::HUDRatioMode::Original;
-    graphics.api_option = ultramodern::renderer::GraphicsApi::Auto;
+    // MT_RT64_VULKAN=1: force the Vulkan backend (Auto picks D3D12 on Windows)
+    graphics.api_option = std::getenv("MT_RT64_VULKAN") != nullptr ? ultramodern::renderer::GraphicsApi::Vulkan
+                                                                    : ultramodern::renderer::GraphicsApi::Auto;
     graphics.ar_option = ultramodern::renderer::AspectRatio::Original;
     graphics.msaa_option = ultramodern::renderer::Antialiasing::None;
     graphics.rr_option = ultramodern::renderer::RefreshRate::Original;

@@ -144,6 +144,16 @@ as __osViSwapContext does. A patch to RT64 (patches/rt64) makes the VI renderer
 show only the columns that X scale covers. RT64 still ignores H start, so the
 picture fills the width instead of having the small borders it has on a TV.
 
+## Framebuffers sampled as textures
+The game renders the crowd and line judges into 64x64 RGBA16 buffers
+(0x28D980-0x2A2DC0) now and then, and samples them every frame as two 64x32
+halves. Shadows go into 4 KB buffers (0x28C900-0x2A7F00): a 16-bit 64x32 fill
+with 0xFFFF, then the silhouette drawn at the same address as a 64-wide I8
+image of 38-51 rows, then a 64x64 I8 load. RT64 serves these loads from GPU
+copies of its high-resolution framebuffers. patches/rt64/0002 fixes what went
+wrong there (see docs/versions.md); MT_RT64_RDRAM_COPIES=1 switches to RDRAM
+for comparison.
+
 ## KSEG1 accesses
 The runtime maps only KSEG0 (0x80000000) to RDRAM. A few places use the
 uncached view 0xA0000000: the boot decompressor's clear loop (0x8030008C,

@@ -16,6 +16,15 @@ Local patches on top of these commits (`patches/`):
   framebuffer width. Mario Tennis uses `osViSetXScale(0.79)` to magnify the left
   ~304 columns of its 384-wide framebuffer (title/splash screens); unpatched,
   RT64 shows all 384 and the picture sits in the left part of the screen.
+- rt64 `0002-tile-copy-fixes.patch`: two fixes to the GPU copies RT64 makes when
+  a game samples one of its framebuffers as a texture.
+  - New tile copy textures are cleared once before their first copy. Without the
+    clear, Intel Iris Xe on D3D12 kept showing stale pixels (boxes around the
+    crowd and line-judge sprites) even though the copy writes every pixel.
+  - A load that runs past the framebuffer's last row gets no tile copy and reads
+    RDRAM. Mario Tennis fills 4 KB at 16 bits, draws a shadow into the first
+    38-51 rows as a 64-wide I8 image, and loads all 64 rows; the copy covered
+    only the drawn rows, so the rest came out dark (rectangular shadows).
 
 SDL2 2.30.3 (official release package, fetched by CMake on Windows; same version as Zelda64Recomp v1.2.2).
 

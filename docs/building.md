@@ -82,3 +82,20 @@ The first time, pass the ROM (or drop it onto the executable):
 The runtime keeps a copy of the ROM and the EEPROM save in
 `%APPDATA%\mariotennis-recomp\MarioTennisRecompiled\`, so later runs need no argument.
 Controls are in the [README](../README.md#controls).
+
+## Debugging aids
+
+Environment variables read at startup (use a RelWithDebInfo build: console and symbols):
+
+| Variable | Effect |
+|---|---|
+| `MT_TRACE=1` | log file loads, TLB mappings and `osViSetXScale` changes |
+| `MT_DUMP_STACKS=<s>` | after that many seconds, print every thread's call stack |
+| `MT_RT64_DEV=1` | RT64 developer mode: F1 opens RT64's inspector (pause, browse the frame's draw calls), RDP warnings on the console |
+| `MT_WATCH=<addr>:<size>,...` | RDRAM watchpoints (hex physical addresses): every 2 s, which code (game, runtime, RT64) read or wrote those 4 KB pages, grouped by call stack |
+| (key) F9 | write RDRAM (8 MB) to `rdram_<n>.bin` in the current folder; N64 byte address `a` is at file offset `a ^ 3` |
+| (key) F10 | print the framebuffers RT64 tracks (address range, width, height, last write) |
+| `MT_RT64_RDRAM_COPIES=1` | sample framebuffers used as textures (crowd sprites, shadows, hit effects) from RDRAM instead of RT64's GPU copies: native resolution and slower; for comparing against the GPU copy path |
+| `MT_RT64_RES1=1` | render at the original resolution |
+| `MT_RT64_VULKAN=1` | force RT64's Vulkan backend (the default on Windows is D3D12) |
+| `MT_PROFILE=<s>` | sampling profiler: every that many seconds, one line on the console (display lists/s, VI/s, busiest threads) and a report in `mt_profile.txt` in the current folder (hottest functions per busy thread) |

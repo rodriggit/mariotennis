@@ -102,6 +102,7 @@ target_compile_options(RecompiledFuncs PRIVATE
 # Executable
 add_executable(MarioTennisRecompiled
     port/src/main.cpp
+    port/src/mt_config.cpp
     port/src/crash_handler.cpp
     port/src/mt_hooks.cpp
     port/src/mt_pak.cpp

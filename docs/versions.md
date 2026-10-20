@@ -21,10 +21,19 @@ Local patches on top of these commits (`patches/`):
   - New tile copy textures are cleared once before their first copy. Without the
     clear, Intel Iris Xe on D3D12 kept showing stale pixels (boxes around the
     crowd and line-judge sprites) even though the copy writes every pixel.
+    RT64 main already does this with `needsDiscard`/`discardTexture`, so this
+    part goes away when the RT64 pin moves past it.
   - A load that runs past the framebuffer's last row gets no tile copy and reads
     RDRAM. Mario Tennis fills 4 KB at 16 bits, draws a shadow into the first
     38-51 rows as a 64-wide I8 image, and loads all 64 rows; the copy covered
     only the drawn rows, so the rest came out dark (rectangular shadows).
+- rt64 `0003-rect-linear-filtering.patch`: an enhancement option,
+  `rect.forceLinearFiltering`, that samples the textures of rectangles (the game's
+  2D: menus, scoreboards, title screens) with linear filtering even when the game
+  asks for point sampling. config.ini's `filter_2d = linear` turns it on; it's
+  off by default because the game builds big images (title logo, splash) from blocks
+  loaded one at a time, and the filter has no neighbor texels at the joins, which
+  show as cuts.
 
 SDL2 2.30.3 (official release package, fetched by CMake on Windows; same version as Zelda64Recomp v1.2.2).
 

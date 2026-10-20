@@ -65,6 +65,22 @@ static RT64::UserConfiguration::InternalColorFormat to_rt64(ur::HighPrecisionFra
     }
 }
 
+static bool linear_filter_2d = false;
+static mt::renderer::Upscale2D upscale_2d = mt::renderer::Upscale2D::ScaledOnly;
+
+void mt::renderer::set_2d_options(bool linear_filter, Upscale2D upscale) {
+    linear_filter_2d = linear_filter;
+    upscale_2d = upscale;
+}
+
+static RT64::UserConfiguration::Upscale2D to_rt64(mt::renderer::Upscale2D option) {
+    switch (option) {
+        case mt::renderer::Upscale2D::Original: return RT64::UserConfiguration::Upscale2D::Original;
+        case mt::renderer::Upscale2D::All:      return RT64::UserConfiguration::Upscale2D::All;
+        default:                                return RT64::UserConfiguration::Upscale2D::ScaledOnly;
+    }
+}
+
 static void set_application_user_config(RT64::Application* application, const ur::GraphicsConfig& config) {
     switch (config.res_option) {
         default:
@@ -104,6 +120,7 @@ static void set_application_user_config(RT64::Application* application, const ur
     application->userConfig.refreshRateTarget = config.rr_manual_value;
     application->userConfig.internalColorFormat = to_rt64(config.hpfb_option);
     application->userConfig.displayBuffering = RT64::UserConfiguration::DisplayBuffering::Triple;
+    application->userConfig.upscale2D = to_rt64(upscale_2d);
 }
 
 static ur::SetupResult map_setup_result(RT64::Application::SetupResult result) {
@@ -187,6 +204,9 @@ mt::renderer::RT64Context::RT64Context(uint8_t* rdram, ur::WindowHandle window_h
     // resolution; patches/rt64/0002 fixes the stale contents those copies showed.
     // MT_RT64_RDRAM_COPIES=1 samples them from RDRAM instead (slower, native resolution).
     app->emulatorConfig.framebuffer.copyWithGPU = std::getenv("MT_RT64_RDRAM_COPIES") == nullptr;
+    // The game draws its 2D images with point sampling; filter_2d = linear smooths them when
+    // enlarged (patches/rt64/0003).
+    app->enhancementConfig.rect.forceLinearFiltering = linear_filter_2d;
     switch (config.api_option) {
         case ur::GraphicsApi::D3D12:  app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::D3D12; break;
         case ur::GraphicsApi::Vulkan: app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Vulkan; break;

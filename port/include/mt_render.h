@@ -14,6 +14,11 @@ namespace RT64 {
 }
 
 namespace mt::renderer {
+    // How 2D images (menus, scoreboards, title screens) are drawn; from config.ini, set
+    // before the renderer starts.
+    enum class Upscale2D { Original, ScaledOnly, All };
+    void set_2d_options(bool linear_filter, Upscale2D upscale);
+
     class RT64Context final : public ultramodern::renderer::RendererContext {
     public:
         RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool developer_mode);

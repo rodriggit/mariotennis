@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 #include "recomp.h"
@@ -281,6 +282,26 @@ void osViSetXScale_mt(uint8_t* rdram, recomp_context* ctx) {
 
 float mt_vi_x_scale_factor(void) {
     return vi_x_scale_factor.load();
+}
+
+// After the NuSys EEPROM manager's osEepromLongRead/Write call: a1 = block, a2 = buffer,
+// a3 = bytes, v0 = result. Prints the access with its data (MT_TRACE_EEPROM=1).
+void mt_eeprom_trace(uint8_t* rdram, recomp_context* ctx, int write) {
+    static const bool trace_eeprom = std::getenv("MT_TRACE_EEPROM") != nullptr;
+    if (!trace_eeprom) {
+        return;
+    }
+    const uint32_t block = (uint32_t)ctx->r5 & 0xFF;
+    const gpr buffer = ctx->r6;
+    const uint32_t bytes = (uint32_t)ctx->r7 & 0xFFFF;
+    std::string hex;
+    char b[4];
+    for (uint32_t i = 0; i < bytes; i++) {
+        snprintf(b, sizeof(b), "%02X", (unsigned)MEM_BU(buffer, i));
+        hex += b;
+    }
+    fprintf(stderr, "[mt] EEPROM %s offset 0x%03X bytes 0x%03X buffer 0x%08X -> %d: %s\n", write ? "write" : "read ",
+            block * 8, bytes, (uint32_t)buffer, (int)ctx->r2, hex.c_str());
 }
 
 } // extern "C"

@@ -37,6 +37,7 @@ Saves (EEPROM) and the stored ROM are in
 ## Controls
 
 The keyboard and the first gamepad both control player 1. Gamepads 2–4 are players 2–4.
+These are the defaults; they can be changed in `config.ini` (see [Settings](#settings)).
 Gamepads use SDL's standard layout (Xbox names below); PlayStation, Switch and other
 controllers SDL recognises map the same way by button position.
 
@@ -56,13 +57,35 @@ controllers SDL recognises map the same way by button position.
 |---|---|
 | F11 or Alt+Enter | Toggle fullscreen |
 
-Controls can't be remapped yet. Rumble works on gamepads that support it, as a Rumble Pak.
+Rumble works on gamepads that support it, as a Rumble Pak.
+
+## Settings
+
+Controls and graphics options are in `config.ini`, next to the executable. It's created
+with the defaults on the first run, and each option is explained in the file itself.
+If that folder isn't writable, the file goes in the save folder above instead. Changes
+take effect on the next start; delete the file to get the defaults back.
+
+- `[keyboard]` and `[gamepad]`: which keys or gamepad inputs press each N64 button or
+  push the stick. Several per button are allowed, separated by commas.
+- `[graphics]`:
+  - `resolution`;
+  - `fullscreen`;
+  - `antialiasing` (MSAA);
+  - `api` (D3D12 or Vulkan);
+  - `upscale_2d`: which 2D images (menus, scoreboards, title screens) are drawn at the
+    high resolution;
+  - `filter_2d`: whether those 2D images are smooth or have sharp pixels (the default).
+    It only has an effect with `upscale_2d = all`, because the game draws most of its
+    2D at 1:1. Smoothing shows cuts where the game joins the blocks of its big images.
+
+If a setting isn't understood, a message lists it at startup and it keeps its default.
 
 ## Known limitations
 
 - **Transfer Pak** (Game Boy connectivity) and **Controller Pak** are not supported;
   the game sees no pak connected.
-- No settings menu yet: 4:3, original frame rate, resolution scaled to the window.
+- 4:3 only, original frame rate.
 
 ## How it works
 

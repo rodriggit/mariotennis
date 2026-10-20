@@ -1,0 +1,46 @@
+diff --git a/src/common/rt64_enhancement_configuration.cpp b/src/common/rt64_enhancement_configuration.cpp
+index 7050102..c8f8338 100644
+--- a/src/common/rt64_enhancement_configuration.cpp
++++ b/src/common/rt64_enhancement_configuration.cpp
+@@ -11,6 +11,7 @@ namespace RT64 {
+         framebuffer.reinterpretFixULS = true;
+         presentation.mode = Presentation::Mode::SkipBuffering;
+         rect.fixRectLR = true;
++        rect.forceLinearFiltering = false;
+         f3dex.forceBranch = false;
+         s2dex.fixBilerpMismatch = true;
+         s2dex.framebufferFastPath = true;
+diff --git a/src/common/rt64_enhancement_configuration.h b/src/common/rt64_enhancement_configuration.h
+index ffabdbf..e6286aa 100644
+--- a/src/common/rt64_enhancement_configuration.h
++++ b/src/common/rt64_enhancement_configuration.h
+@@ -24,6 +24,7 @@ namespace RT64 {
+         
+         struct Rect {
+             bool fixRectLR;
++            bool forceLinearFiltering;
+         };
+ 
+         struct F3DEX {
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+index 6b0bb31..7e565e2 100644
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -945,7 +945,8 @@ namespace RT64 {
+                     const bool oneCycleHardwareBug = (callDesc.otherMode.cycleType() == G_CYC_1CYCLE);
+                     auto &flags = shaderDesc.flags;
+                     flags.rect = (proj.type == Projection::Type::Rectangle);
+-                    flags.linearFiltering = linearFiltering || forceLinearFiltering;
++                    const bool forceLinearRect = flags.rect && ext.enhancementConfig->rect.forceLinearFiltering;
++                    flags.linearFiltering = linearFiltering || forceLinearFiltering || forceLinearRect;
+                     flags.usesTexture0 = callDesc.colorCombiner.usesTexture(callDesc.otherMode, 0, oneCycleHardwareBug);
+                     flags.usesTexture1 = callDesc.colorCombiner.usesTexture(callDesc.otherMode, 1, oneCycleHardwareBug);
+                     flags.blenderApproximation = static_cast<unsigned>(blenderEmuReqs.approximateEmulation);
+@@ -2156,6 +2157,7 @@ namespace RT64 {
+                     ImGui::Text("Rect");
+                     ImGui::Indent();
+                     enhanceConfigChanged = ImGui::Checkbox("Fix LR with Scissor", &enhancementConfig.rect.fixRectLR) || enhanceConfigChanged;
++                    enhanceConfigChanged = ImGui::Checkbox("Force Linear Filtering", &enhancementConfig.rect.forceLinearFiltering) || enhanceConfigChanged;
+                     ImGui::Unindent();
+                     ImGui::Text("F3DEX");
+                     ImGui::Indent();

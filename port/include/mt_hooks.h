@@ -34,6 +34,9 @@ void osMapTLB_recomp(uint8_t* rdram, recomp_context* ctx);
 void osVirtualToPhysical_tlb(uint8_t* rdram, recomp_context* ctx);
 // the game's osViSetXScale (the runtime's ignores the factor)
 void osViSetXScale_mt(uint8_t* rdram, recomp_context* ctx);
+// NuSys EEPROM manager callbacks (0x80041698 read, 0x800416C8 write), after their
+// osEepromLongRead/Write call: print the access with its data (MT_TRACE_EEPROM)
+void mt_eeprom_trace(uint8_t* rdram, recomp_context* ctx, int write);
 // pak access from the Transfer Pak code (port/src/mt_pak.cpp): always "no pak"
 void __osPfsGetStatus_recomp(uint8_t* rdram, recomp_context* ctx);
 void __osContRamRead_recomp(uint8_t* rdram, recomp_context* ctx);

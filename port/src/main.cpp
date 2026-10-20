@@ -28,6 +28,7 @@
 #include "librecomp/rsp.hpp"
 #include "xxHash/xxh3.h"
 
+#include "mt_config.h"
 #include "mt_render.h"
 
 extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* ctx);
@@ -61,7 +62,105 @@ namespace btn {
 
 constexpr int num_ports = 4;
 constexpr float stick_range = 85.0f / 127.0f;   // full deflection of an original stick
-constexpr float stick_deadzone = 0.15f;
+constexpr float axis_press = 0.5f;              // a stick direction or trigger counts as pressed past this
+
+// Controls from config.ini ([keyboard], [gamepad]): one binding per N64 button or stick direction.
+enum StickDir { STICK_UP, STICK_DOWN, STICK_LEFT, STICK_RIGHT, STICK_NONE };
+
+struct PadInput {
+    bool is_axis;
+    int index;      // SDL_GameControllerButton or SDL_GameControllerAxis
+    float sign;     // axes: +1 or -1
+};
+
+struct Binding {
+    const char* name;
+    uint16_t mask;
+    StickDir stick;
+    std::vector<SDL_Scancode> keys;
+    std::vector<PadInput> pad;
+};
+
+static std::array<Binding, 18> bindings{ {
+    { "a", btn::A, STICK_NONE }, { "b", btn::B, STICK_NONE }, { "z", btn::Z, STICK_NONE },
+    { "l", btn::L, STICK_NONE }, { "r", btn::R, STICK_NONE }, { "start", btn::START, STICK_NONE },
+    { "c_up", btn::CU, STICK_NONE }, { "c_down", btn::CD, STICK_NONE },
+    { "c_left", btn::CL, STICK_NONE }, { "c_right", btn::CR, STICK_NONE },
+    { "dpad_up", btn::DU, STICK_NONE }, { "dpad_down", btn::DD, STICK_NONE },
+    { "dpad_left", btn::DL, STICK_NONE }, { "dpad_right", btn::DR, STICK_NONE },
+    { "stick_up", 0, STICK_UP }, { "stick_down", 0, STICK_DOWN },
+    { "stick_left", 0, STICK_LEFT }, { "stick_right", 0, STICK_RIGHT },
+} };
+
+static SDL_GameControllerAxis pad_stick_x = SDL_CONTROLLER_AXIS_LEFTX;
+static SDL_GameControllerAxis pad_stick_y = SDL_CONTROLLER_AXIS_LEFTY;
+static float stick_deadzone = 0.15f;
+static bool rumble_enabled = true;
+
+static bool parse_yes_no(const std::string& section, const char* key, bool fallback) {
+    const std::string v = mt::config::get(section, key);
+    if (v == "yes" || v == "true" || v == "1" || v == "on") return true;
+    if (v == "no" || v == "false" || v == "0" || v == "off") return false;
+    mt::config::warn("[" + section + "] " + key + ": expected yes or no, got \"" + v + "\"");
+    return fallback;
+}
+
+static bool parse_pad_input(const std::string& name, PadInput& out) {
+    std::string base = name;
+    float sign = 1.0f;
+    if (!base.empty() && (base.back() == '+' || base.back() == '-')) {
+        sign = base.back() == '-' ? -1.0f : 1.0f;
+        base.pop_back();
+    }
+    const SDL_GameControllerButton button = SDL_GameControllerGetButtonFromString(base.c_str());
+    if (button != SDL_CONTROLLER_BUTTON_INVALID && base.size() == name.size()) {
+        out = { false, int(button), 1.0f };
+        return true;
+    }
+    const SDL_GameControllerAxis axis = SDL_GameControllerGetAxisFromString(base.c_str());
+    const bool trigger = axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT || axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT;
+    // Sticks need a direction; triggers take none.
+    if (axis != SDL_CONTROLLER_AXIS_INVALID && (trigger == (base.size() == name.size()))) {
+        out = { true, int(axis), sign };
+        return true;
+    }
+    return false;
+}
+
+static void load_controls() {
+    for (Binding& binding : bindings) {
+        for (const std::string& key : mt::config::get_list("keyboard", binding.name)) {
+            const SDL_Scancode code = SDL_GetScancodeFromName(key.c_str());
+            if (code == SDL_SCANCODE_UNKNOWN) {
+                mt::config::warn(std::string("[keyboard] ") + binding.name + ": unknown key \"" + key + "\"");
+            } else {
+                binding.keys.push_back(code);
+            }
+        }
+        for (const std::string& input : mt::config::get_list("gamepad", binding.name)) {
+            PadInput pad;
+            if (parse_pad_input(input, pad)) {
+                binding.pad.push_back(pad);
+            } else {
+                mt::config::warn(std::string("[gamepad] ") + binding.name + ": unknown input \"" + input + "\"");
+            }
+        }
+    }
+    const std::string stick = mt::config::get("gamepad", "stick");
+    if (stick == "right") {
+        pad_stick_x = SDL_CONTROLLER_AXIS_RIGHTX;
+        pad_stick_y = SDL_CONTROLLER_AXIS_RIGHTY;
+    } else if (stick != "left") {
+        mt::config::warn("[gamepad] stick: expected left or right, got \"" + stick + "\"");
+    }
+    const std::string deadzone = mt::config::get("gamepad", "deadzone");
+    try {
+        stick_deadzone = std::clamp(std::stof(deadzone), 0.0f, 0.9f);
+    } catch (const std::exception&) {
+        mt::config::warn("[gamepad] deadzone: expected a number, got \"" + deadzone + "\"");
+    }
+    rumble_enabled = parse_yes_no("gamepad", "rumble", true);
+}
 
 struct PadState {
     bool connected = false;
@@ -98,56 +197,18 @@ static float axis(SDL_GameController* pad, SDL_GameControllerAxis a) {
     return std::abs(v) < stick_deadzone ? 0.0f : std::clamp(v, -1.0f, 1.0f);
 }
 
-static void read_gamepad(SDL_GameController* pad, PadState& s) {
-    auto b = [&](SDL_GameControllerButton button, uint16_t mask) {
-        if (SDL_GameControllerGetButton(pad, button)) s.buttons |= mask;
-    };
-    b(SDL_CONTROLLER_BUTTON_A, btn::A);
-    b(SDL_CONTROLLER_BUTTON_X, btn::B);
-    b(SDL_CONTROLLER_BUTTON_B, btn::B);
-    b(SDL_CONTROLLER_BUTTON_START, btn::START);
-    b(SDL_CONTROLLER_BUTTON_LEFTSHOULDER, btn::L);
-    b(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, btn::R);
-    b(SDL_CONTROLLER_BUTTON_DPAD_UP, btn::DU);
-    b(SDL_CONTROLLER_BUTTON_DPAD_DOWN, btn::DD);
-    b(SDL_CONTROLLER_BUTTON_DPAD_LEFT, btn::DL);
-    b(SDL_CONTROLLER_BUTTON_DPAD_RIGHT, btn::DR);
-    if (SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 16000) s.buttons |= btn::Z;
-    if (SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 16000) s.buttons |= btn::R;
-    float cx = axis(pad, SDL_CONTROLLER_AXIS_RIGHTX), cy = axis(pad, SDL_CONTROLLER_AXIS_RIGHTY);
-    if (cx < -0.5f) s.buttons |= btn::CL;
-    if (cx > 0.5f) s.buttons |= btn::CR;
-    if (cy < -0.5f) s.buttons |= btn::CU;
-    if (cy > 0.5f) s.buttons |= btn::CD;
-    float x = axis(pad, SDL_CONTROLLER_AXIS_LEFTX), y = -axis(pad, SDL_CONTROLLER_AXIS_LEFTY);
-    if (x != 0.0f || y != 0.0f) {
-        s.x = x * stick_range;
-        s.y = y * stick_range;
+static bool pad_input_pressed(SDL_GameController* pad, const PadInput& in) {
+    if (!in.is_axis) {
+        return SDL_GameControllerGetButton(pad, SDL_GameControllerButton(in.index)) != 0;
     }
-    s.rumble_pak |= SDL_GameControllerHasRumble(pad) == SDL_TRUE;
+    return SDL_GameControllerGetAxis(pad, SDL_GameControllerAxis(in.index)) / 32767.0f * in.sign > axis_press;
 }
 
-// Keyboard on port 1: arrows = stick, X = A, C = B, Z = Z, A/S = L/R, Enter = Start,
-// I/K/J/L = C buttons, T/G/F/H = D-pad.
-static void read_keyboard(PadState& s) {
-    const Uint8* k = SDL_GetKeyboardState(nullptr);
-    auto b = [&](SDL_Scancode key, uint16_t mask) { if (k[key]) s.buttons |= mask; };
-    b(SDL_SCANCODE_X, btn::A);
-    b(SDL_SCANCODE_C, btn::B);
-    b(SDL_SCANCODE_Z, btn::Z);
-    b(SDL_SCANCODE_A, btn::L);
-    b(SDL_SCANCODE_S, btn::R);
-    b(SDL_SCANCODE_RETURN, btn::START);
-    b(SDL_SCANCODE_I, btn::CU);
-    b(SDL_SCANCODE_K, btn::CD);
-    b(SDL_SCANCODE_J, btn::CL);
-    b(SDL_SCANCODE_L, btn::CR);
-    b(SDL_SCANCODE_T, btn::DU);
-    b(SDL_SCANCODE_G, btn::DD);
-    b(SDL_SCANCODE_F, btn::DL);
-    b(SDL_SCANCODE_H, btn::DR);
-    float x = float(k[SDL_SCANCODE_RIGHT]) - float(k[SDL_SCANCODE_LEFT]);
-    float y = float(k[SDL_SCANCODE_UP]) - float(k[SDL_SCANCODE_DOWN]);
+// Digital stick directions (keys, or pad inputs bound to stick_*) push the stick all the way;
+// diagonals are scaled to the same distance.
+static void apply_digital_stick(const std::array<bool, 4>& dirs, PadState& s) {
+    float x = float(dirs[STICK_RIGHT]) - float(dirs[STICK_LEFT]);
+    float y = float(dirs[STICK_UP]) - float(dirs[STICK_DOWN]);
     if (x != 0.0f && y != 0.0f) {
         x *= 0.7071f;
         y *= 0.7071f;
@@ -156,6 +217,40 @@ static void read_keyboard(PadState& s) {
         s.x = x * stick_range;
         s.y = y * stick_range;
     }
+}
+
+static void read_gamepad(SDL_GameController* pad, PadState& s) {
+    std::array<bool, 4> dirs{};
+    for (const Binding& binding : bindings) {
+        for (const PadInput& in : binding.pad) {
+            if (pad_input_pressed(pad, in)) {
+                s.buttons |= binding.mask;
+                if (binding.stick != STICK_NONE) dirs[binding.stick] = true;
+            }
+        }
+    }
+    float x = axis(pad, pad_stick_x), y = -axis(pad, pad_stick_y);
+    if (x != 0.0f || y != 0.0f) {
+        s.x = x * stick_range;
+        s.y = y * stick_range;
+    }
+    apply_digital_stick(dirs, s);
+    s.rumble_pak |= rumble_enabled && SDL_GameControllerHasRumble(pad) == SDL_TRUE;
+}
+
+// The keyboard plays on port 1, together with the first gamepad.
+static void read_keyboard(PadState& s) {
+    const Uint8* k = SDL_GetKeyboardState(nullptr);
+    std::array<bool, 4> dirs{};
+    for (const Binding& binding : bindings) {
+        for (SDL_Scancode key : binding.keys) {
+            if (k[key]) {
+                s.buttons |= binding.mask;
+                if (binding.stick != STICK_NONE) dirs[binding.stick] = true;
+            }
+        }
+    }
+    apply_digital_stick(dirs, s);
 }
 
 static void update_input() {
@@ -417,6 +512,48 @@ static std::filesystem::path config_folder() {
     return path;
 }
 
+// [graphics] of config.ini.
+static ultramodern::renderer::GraphicsConfig load_graphics() {
+    namespace ur = ultramodern::renderer;
+    auto pick = [](const char* key, std::initializer_list<std::pair<const char*, int>> choices, int fallback) {
+        const std::string v = mt::config::get("graphics", key);
+        std::string names;
+        for (const auto& [name, value] : choices) {
+            if (v == name) return value;
+            names += names.empty() ? name : std::string(", ") + name;
+        }
+        mt::config::warn(std::string("[graphics] ") + key + ": expected " + names + ", got \"" + v + "\"");
+        return fallback;
+    };
+
+    ur::GraphicsConfig graphics{};
+    // MT_RT64_DEV=1: RT64's developer mode (F1 inspector, RDP warnings on the console)
+    graphics.developer_mode = std::getenv("MT_RT64_DEV") != nullptr;
+    graphics.res_option = ur::Resolution(pick("resolution", {
+        { "auto", int(ur::Resolution::Auto) }, { "original", int(ur::Resolution::Original) },
+        { "2x", int(ur::Resolution::Original2x) } }, int(ur::Resolution::Auto)));
+    graphics.wm_option = parse_yes_no("graphics", "fullscreen", false) ? ur::WindowMode::Fullscreen : ur::WindowMode::Windowed;
+    graphics.msaa_option = ur::Antialiasing(pick("antialiasing", {
+        { "none", int(ur::Antialiasing::None) }, { "2x", int(ur::Antialiasing::MSAA2X) },
+        { "4x", int(ur::Antialiasing::MSAA4X) }, { "8x", int(ur::Antialiasing::MSAA8X) } }, int(ur::Antialiasing::None)));
+    graphics.api_option = ur::GraphicsApi(pick("api", {
+        { "auto", int(ur::GraphicsApi::Auto) }, { "d3d12", int(ur::GraphicsApi::D3D12) },
+        { "vulkan", int(ur::GraphicsApi::Vulkan) } }, int(ur::GraphicsApi::Auto)));
+    graphics.hr_option = ur::HUDRatioMode::Original;
+    graphics.ar_option = ur::AspectRatio::Original;
+    graphics.rr_option = ur::RefreshRate::Original;
+    graphics.hpfb_option = ur::HighPrecisionFramebuffer::Auto;
+    graphics.rr_manual_value = 60;
+    graphics.ds_option = 1;
+
+    const bool linear_2d = pick("filter_2d", { { "nearest", 0 }, { "linear", 1 } }, 0) != 0;
+    const auto upscale_2d = mt::renderer::Upscale2D(pick("upscale_2d", {
+        { "scaled", int(mt::renderer::Upscale2D::ScaledOnly) }, { "original", int(mt::renderer::Upscale2D::Original) },
+        { "all", int(mt::renderer::Upscale2D::All) } }, int(mt::renderer::Upscale2D::All)));
+    mt::renderer::set_2d_options(linear_2d, upscale_2d);
+    return graphics;
+}
+
 int main(int argc, char** argv) {
     mt_install_crash_handler();
     setvbuf(stdout, nullptr, _IONBF, 0);
@@ -429,6 +566,9 @@ int main(int argc, char** argv) {
     init_audio();
 
     recomp::register_config_path(config_folder());
+    const std::filesystem::path config_path = mt::config::load(config_folder());
+    fprintf(stderr, "[mt] settings: %s\n", config_path.empty() ? "(defaults)" : mt::config::path_text(config_path).c_str());
+    load_controls();
 
     recomp::GameEntry game{
         .rom_hash = MT_ROM_HASH,
@@ -466,24 +606,13 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    ultramodern::renderer::GraphicsConfig graphics{};
-    // MT_RT64_DEV=1: RT64's developer mode (F1 inspector, RDP warnings on the console)
-    graphics.developer_mode = std::getenv("MT_RT64_DEV") != nullptr;
-    // MT_RT64_RES1=1: render at the original resolution (debugging RT64's framebuffer copies)
-    graphics.res_option = std::getenv("MT_RT64_RES1") != nullptr ? ultramodern::renderer::Resolution::Original
-                                                               : ultramodern::renderer::Resolution::Auto;
-    graphics.wm_option = ultramodern::renderer::WindowMode::Windowed;
-    graphics.hr_option = ultramodern::renderer::HUDRatioMode::Original;
-    // MT_RT64_VULKAN=1: force the Vulkan backend (Auto picks D3D12 on Windows)
-    graphics.api_option = std::getenv("MT_RT64_VULKAN") != nullptr ? ultramodern::renderer::GraphicsApi::Vulkan
-                                                                    : ultramodern::renderer::GraphicsApi::Auto;
-    graphics.ar_option = ultramodern::renderer::AspectRatio::Original;
-    graphics.msaa_option = ultramodern::renderer::Antialiasing::None;
-    graphics.rr_option = ultramodern::renderer::RefreshRate::Original;
-    graphics.hpfb_option = ultramodern::renderer::HighPrecisionFramebuffer::Auto;
-    graphics.rr_manual_value = 60;
-    graphics.ds_option = 1;
-    ultramodern::renderer::set_graphics_config(graphics);
+    ultramodern::renderer::set_graphics_config(load_graphics());
+    if (!mt::config::warnings().empty()) {
+        const std::string msg = "Some settings in " + mt::config::path_text(config_path) +
+                                " were not understood and use their defaults:\n\n" + mt::config::warnings();
+        fprintf(stderr, "%s", msg.c_str());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "Mario Tennis Recompiled", msg.c_str(), nullptr);
+    }
 
     recomp::rsp::callbacks_t rsp_callbacks{
         .get_rsp_microcode = get_rsp_microcode,

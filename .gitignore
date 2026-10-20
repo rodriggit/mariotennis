@@ -16,4 +16,4 @@ mt_profile.txt
 rdram_*.bin
 hd*_0x*.bin
 hd*_0x*.raw
-*_log.txt
+*_log*.txt

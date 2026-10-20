@@ -388,15 +388,20 @@ void profile_loop(double window_s) {
 // Every 2 s the accesses are printed grouped by call stack: which game function, runtime or
 // RT64 code reads or writes that memory (4 KB granularity: neighbours on the same pages
 // show up too).
+// With MT_WATCH_ALL=1 every access is caught instead: after each fault the page is opened
+// for one instruction (single step, trap flag) and closed again, and only accesses inside
+// the exact ranges are recorded. Much slower; keep the ranges small.
 
 struct WatchRange {
     uint32_t start;
     uint32_t end;
 };
 std::vector<WatchRange> watch_ranges;
+bool watch_all = false;
+thread_local uint32_t watch_reprotect_page = UINT32_MAX;   // page opened for the single step
 
 constexpr int WATCH_FRAMES = 6;
-constexpr uint32_t WATCH_MAX_HITS = 4096;
+constexpr uint32_t WATCH_MAX_HITS = 65536;
 
 struct WatchHit {
     uint32_t addr;
@@ -421,26 +426,49 @@ uint32_t watched_offset(uint8_t* rdram, ULONG_PTR address, bool* watched) {
     return offset;
 }
 
+bool in_exact_range(uint32_t offset) {
+    for (const WatchRange& range : watch_ranges) {
+        if (offset >= range.start && offset < range.end) {
+            return true;
+        }
+    }
+    return false;
+}
+
 LONG CALLBACK watch_handler(EXCEPTION_POINTERS* info) {
     const EXCEPTION_RECORD* rec = info->ExceptionRecord;
+    uint8_t* rdram = mt_rdram.load();
+    // MT_WATCH_ALL: the access the page was opened for has run; close the page again.
+    if (rec->ExceptionCode == EXCEPTION_SINGLE_STEP && watch_reprotect_page != UINT32_MAX) {
+        DWORD old;
+        VirtualProtect(rdram + watch_reprotect_page, 0x1000, PAGE_NOACCESS, &old);
+        watch_reprotect_page = UINT32_MAX;
+        info->ContextRecord->EFlags &= ~0x100u;
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
     if (rec->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || rec->NumberParameters < 2) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
-    uint8_t* rdram = mt_rdram.load();
     bool watched;
     uint32_t offset = watched_offset(rdram, rec->ExceptionInformation[1], &watched);
     if (!watched) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
-    uint32_t index = watch_hit_count.fetch_add(1);
-    if (index < WATCH_MAX_HITS) {
-        WatchHit& hit = watch_hits[index];
-        hit.addr = offset;
-        hit.write = rec->ExceptionInformation[0] == 1;
-        hit.num_frames = capture_frames(*info->ContextRecord, hit.frames, WATCH_FRAMES);
+    if (!watch_all || in_exact_range(offset)) {
+        uint32_t index = watch_hit_count.fetch_add(1);
+        if (index < WATCH_MAX_HITS) {
+            WatchHit& hit = watch_hits[index];
+            hit.addr = offset;
+            hit.write = rec->ExceptionInformation[0] == 1;
+            hit.num_frames = capture_frames(*info->ContextRecord, hit.frames, WATCH_FRAMES);
+        }
     }
     DWORD old;
     VirtualProtect(rdram + (offset & ~0xFFFu), 0x1000, PAGE_READWRITE, &old);
+    if (watch_all) {
+        watch_reprotect_page = offset & ~0xFFFu;
+        info->ContextRecord->EFlags |= 0x100u;   // trap flag: single-step the access
+    }
     return EXCEPTION_CONTINUE_EXECUTION;
 }
 
@@ -469,7 +497,8 @@ void watch_loop() {
             watch_protect(rdram);
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        uint32_t count = (std::min)(watch_hit_count.exchange(0), WATCH_MAX_HITS);
+        const uint32_t total = watch_hit_count.exchange(0);
+        const uint32_t count = (std::min)(total, WATCH_MAX_HITS);
         if (count == 0) {
             continue;
         }
@@ -493,7 +522,7 @@ void watch_loop() {
             it->second.max_addr = (std::max)(it->second.max_addr, hit.addr);
         }
         const double at = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-        fprintf(stderr, "[watch] %.1fs: %u page faults\n", at, count);
+        fprintf(stderr, "[watch] %.1fs: %u accesses (%u recorded)\n", at, total, count);
         for (const auto& [key, group] : groups) {
             fprintf(stderr, "[watch]   %4u  0x%06X-0x%06X  %s\n", group.hits, group.min_addr, group.max_addr, key.c_str());
         }
@@ -521,6 +550,10 @@ void watch_start(const char* spec) {
         p = next + 1;
     }
     if (!watch_ranges.empty()) {
+        watch_all = std::getenv("MT_WATCH_ALL") != nullptr;
+        if (watch_all) {
+            fprintf(stderr, "[watch] every access (MT_WATCH_ALL)\n");
+        }
         AddVectoredExceptionHandler(1, watch_handler);
         std::thread(watch_loop).detach();
     }

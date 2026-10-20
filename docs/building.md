@@ -138,6 +138,7 @@ Environment variables read at startup (use a RelWithDebInfo build: console and s
 | `MT_DUMP_STACKS=<s>` | after that many seconds, print every thread's call stack |
 | `MT_RT64_DEV=1` | RT64 developer mode: F1 opens RT64's inspector (pause, browse the frame's draw calls), RDP warnings on the console |
 | `MT_WATCH=<addr>:<size>,...` | RDRAM watchpoints (hex physical addresses): every 2 s, which code (game, runtime, RT64) read or wrote those 4 KB pages, grouped by call stack |
+| `MT_WATCH_ALL=1` | with `MT_WATCH`: catch every access instead of the first per page every 100 ms, and only inside the exact ranges (single-steps each access: slow, keep the ranges small) |
 | (key) F9 | write RDRAM (8 MB) to `rdram_<n>.bin` in the current folder; N64 byte address `a` is at file offset `a ^ 3` |
 | (key) F10 | print the framebuffers RT64 tracks (address range, width, height, last write) |
 | `MT_RT64_RDRAM_COPIES=1` | sample framebuffers used as textures (crowd sprites, shadows, hit effects) from RDRAM instead of RT64's GPU copies: native resolution and slower; for comparing against the GPU copy path |

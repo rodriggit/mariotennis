@@ -12,6 +12,7 @@
 //    swaps which module is registered there and sets mt_window_base, which the
 //    modules' data accesses read (hooks in recomp.toml).
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -282,6 +283,28 @@ void osViSetXScale_mt(uint8_t* rdram, recomp_context* ctx) {
 
 float mt_vi_x_scale_factor(void) {
     return vi_x_scale_factor.load();
+}
+
+float mt_widescreen_factor(void);   // rt64_context.cpp
+
+// main_800346A0 (sphere on screen?) compares the projected x against the camera's half
+// width in pixels. With aspect_ratio = expand RT64 shows more on each side, so the limit
+// grows by the same factor; positions on screen, which use the same field, are untouched.
+int32_t mt_cull_half_width(int32_t half_width) {
+    return (int32_t)std::lround(half_width * mt_widescreen_factor());
+}
+
+// The menus' Toad is at x = x0 - 2 * slide: x0 - 16 when fully out on character select,
+// just past the left edge of the 4:3 picture. Scaling that end position by the extra width
+// keeps him as far past the new edge; the part of the slide done so far is scaled alike, so
+// he slides in and out as before and is untouched with slide 0 or at 4:3.
+float mt_menu_toad_x(float x, int32_t slide) {
+    const float wide = mt_widescreen_factor();
+    if (wide <= 1.0f || slide <= 0) {
+        return x;
+    }
+    const float out_x = (x + 2.0f * float(slide)) - 16.0f;
+    return x + (float(slide) / 8.0f) * out_x * (wide - 1.0f);
 }
 
 // After the NuSys EEPROM manager's osEepromLongRead/Write call: a1 = block, a2 = buffer,

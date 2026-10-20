@@ -78,6 +78,7 @@ take effect on the next start; delete the file to get the defaults back.
 - `[graphics]`:
   - `resolution`;
   - `fullscreen`;
+  - `aspect_ratio`: 4:3, or `expand` to fill a wide window (experimental);
   - `antialiasing` (MSAA);
   - `api` (D3D12 or Vulkan);
   - `upscale_2d`: which 2D images (menus, scoreboards, title screens) are drawn at the
@@ -92,7 +93,7 @@ If a setting isn't understood, a message lists it at startup and it keeps its de
 
 - **Transfer Pak** (Game Boy connectivity) and **Controller Pak** are not supported;
   the game sees no pak connected.
-- 4:3 only, original frame rate.
+- Original frame rate. Widescreen (`aspect_ratio = expand`) is experimental.
 
 ## How it works
 

@@ -37,6 +37,12 @@ void osViSetXScale_mt(uint8_t* rdram, recomp_context* ctx);
 // NuSys EEPROM manager callbacks (0x80041698 read, 0x800416C8 write), after their
 // osEepromLongRead/Write call: print the access with its data (MT_TRACE_EEPROM)
 void mt_eeprom_trace(uint8_t* rdram, recomp_context* ctx, int write);
+// main_800346A0's on-screen test: the camera's half width in pixels, widened for the
+// window's aspect ratio when aspect_ratio = expand
+int32_t mt_cull_half_width(int32_t half_width);
+// f71_800ECBE4: the menus' Toad x after its character-select slide (slide 0..8, 8 = fully
+// out); pushed further out when aspect_ratio = expand widens the picture
+float mt_menu_toad_x(float x, int32_t slide);
 // pak access from the Transfer Pak code (port/src/mt_pak.cpp): always "no pak"
 void __osPfsGetStatus_recomp(uint8_t* rdram, recomp_context* ctx);
 void __osContRamRead_recomp(uint8_t* rdram, recomp_context* ctx);

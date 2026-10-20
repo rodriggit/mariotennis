@@ -540,7 +540,9 @@ static ultramodern::renderer::GraphicsConfig load_graphics() {
         { "auto", int(ur::GraphicsApi::Auto) }, { "d3d12", int(ur::GraphicsApi::D3D12) },
         { "vulkan", int(ur::GraphicsApi::Vulkan) } }, int(ur::GraphicsApi::Auto)));
     graphics.hr_option = ur::HUDRatioMode::Original;
-    graphics.ar_option = ur::AspectRatio::Original;
+    graphics.ar_option = ur::AspectRatio(pick("aspect_ratio", {
+        { "original", int(ur::AspectRatio::Original) }, { "expand", int(ur::AspectRatio::Expand) } },
+        int(ur::AspectRatio::Original)));
     graphics.rr_option = ur::RefreshRate::Original;
     graphics.hpfb_option = ur::HighPrecisionFramebuffer::Auto;
     graphics.rr_manual_value = 60;
@@ -607,6 +609,13 @@ int main(int argc, char** argv) {
     }
 
     ultramodern::renderer::set_graphics_config(load_graphics());
+    {
+        char* base = SDL_GetBasePath();
+        const std::filesystem::path exe_folder = base != nullptr ? std::filesystem::u8path(base) : std::filesystem::path();
+        SDL_free(base);
+        mt::renderer::set_shader_cache_paths(exe_folder.empty() ? exe_folder : exe_folder / "shaders.bin",
+                                             config_folder() / "shaders.bin");
+    }
     if (!mt::config::warnings().empty()) {
         const std::string msg = "Some settings in " + mt::config::path_text(config_path) +
                                 " were not understood and use their defaults:\n\n" + mt::config::warnings();

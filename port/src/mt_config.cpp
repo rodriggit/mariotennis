@@ -79,6 +79,10 @@ rumble = yes
 resolution = auto
 ; fullscreen: yes or no. F11 or Alt+Enter switches while playing.
 fullscreen = no
+; aspect_ratio: original = 4:3, with bars on a wide window or screen.
+; expand = the 3D fills the window's width (16:9 on a 16:9 screen); 2D images stay 4:3.
+; Experimental: some 2D (the scrolling banners) doesn't reach the window's sides yet.
+aspect_ratio = original
 ; antialiasing: none, 2x, 4x or 8x (MSAA).
 antialiasing = none
 ; upscale_2d: which 2D images (menus, scoreboards, title screens) are drawn at the high

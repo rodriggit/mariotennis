@@ -72,7 +72,8 @@ To continue a saved tournament, load it from the game's save menu.
 KNOWN LIMITATIONS
 -----------------
 - Transfer Pak (Game Boy connectivity) and Controller Pak are not supported.
-- 4:3 only, original frame rate.
+- Original frame rate. Widescreen (aspect_ratio = expand in config.ini) is
+  experimental.
 
 
 LICENSE

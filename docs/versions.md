@@ -34,6 +34,21 @@ Local patches on top of these commits (`patches/`):
   off by default because the game builds big images (title logo, splash) from blocks
   loaded one at a time, and the filter has no neighbor texels at the joins, which
   show as cuts.
+- rt64 `0004-shader-description-list.patch`: the raster shader cache keeps the
+  descriptions of the shaders it was asked to compile (`submittedDescriptions()`).
+  The port saves them to `shaders.bin` (AppData folder) and submits them again at
+  startup, so they compile in the background during the intro instead of the first
+  time a serve or an effect needs them (RT64 draws with its ubershader meanwhile,
+  which made those moments stutter on weaker GPUs). RT64 main has no shader cache on
+  disk either.
+- rt64 `0005-reserve-native-buffers.patch`: the buffers RT64 uses to copy framebuffers
+  to RDRAM and back are reserved at the next power of two. The size each copy needs
+  depends on the rows it covers, so with exact sizes a buffer was recreated whenever
+  the next copy was slightly bigger: hundreds of D3D12 buffer creations during the
+  effects of strong shots, which switch framebuffers dozens of times per frame.
+  Those switches still cost a full GPU synchronization each: every shadow is drawn
+  at one address first at 16 and then at 8 bits, and RT64 can't reinterpret a
+  framebuffer's format on the GPU yet.
 
 SDL2 2.30.3 (official release package, fetched by CMake on Windows; same version as Zelda64Recomp v1.2.2).
 

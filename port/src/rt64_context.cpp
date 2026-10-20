@@ -5,10 +5,13 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <fstream>
 #include <vector>
 
 #define HLSL_CPU
 #include "hle/rt64_application.h"
+#include "render/rt64_raster_shader_cache.h"
 
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/config.hpp"
@@ -71,6 +74,90 @@ static mt::renderer::Upscale2D upscale_2d = mt::renderer::Upscale2D::ScaledOnly;
 void mt::renderer::set_2d_options(bool linear_filter, Upscale2D upscale) {
     linear_filter_2d = linear_filter;
     upscale_2d = upscale;
+}
+
+// Shader list: RT64 compiles a shader the first time a draw needs it and uses its slow
+// ubershader meanwhile, which made the first serves and effects of every session stutter.
+// The descriptions of the shaders it compiled (patches/rt64/0004) are saved and submitted
+// again at startup. File: magic, format version, sizeof(ShaderDescription), count, entries.
+static std::filesystem::path shader_list_bundled;
+static std::filesystem::path shader_list_user;
+static size_t shader_list_saved = 0;
+static uint32_t shader_list_vi = 0;
+static constexpr char shader_list_magic[4] = { 'M', 'T', 'S', 'L' };
+static constexpr uint32_t shader_list_version = 1;
+
+void mt::renderer::set_shader_cache_paths(const std::filesystem::path& bundled, const std::filesystem::path& user) {
+    shader_list_bundled = bundled;
+    shader_list_user = user;
+}
+
+static std::vector<RT64::ShaderDescription> read_shader_list(const std::filesystem::path& path) {
+    std::vector<RT64::ShaderDescription> descs;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return descs;
+    }
+    char magic[4];
+    uint32_t header[3];
+    in.read(magic, sizeof(magic));
+    in.read(reinterpret_cast<char*>(header), sizeof(header));
+    if (!in || std::memcmp(magic, shader_list_magic, sizeof(magic)) != 0 || header[0] != shader_list_version ||
+        header[1] != sizeof(RT64::ShaderDescription) || header[2] > 0x10000) {
+        fprintf(stderr, "[mt] ignoring a shader list in another format\n");
+        return descs;
+    }
+    descs.resize(header[2]);
+    in.read(reinterpret_cast<char*>(descs.data()), std::streamsize(descs.size() * sizeof(RT64::ShaderDescription)));
+    if (!in) {
+        descs.clear();
+    }
+    return descs;
+}
+
+static void save_shader_list(RT64::RasterShaderCache& cache) {
+    if (shader_list_user.empty()) {
+        return;
+    }
+    const std::vector<RT64::ShaderDescription> descs = cache.submittedDescriptions();
+    if (descs.size() <= shader_list_saved) {
+        return;
+    }
+    std::filesystem::path temp = shader_list_user;
+    temp += ".tmp";
+    {
+        std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+        const uint32_t header[3] = { shader_list_version, uint32_t(sizeof(RT64::ShaderDescription)), uint32_t(descs.size()) };
+        out.write(shader_list_magic, sizeof(shader_list_magic));
+        out.write(reinterpret_cast<const char*>(header), sizeof(header));
+        out.write(reinterpret_cast<const char*>(descs.data()), std::streamsize(descs.size() * sizeof(RT64::ShaderDescription)));
+        if (!out) {
+            return;
+        }
+    }
+    std::error_code error;
+    std::filesystem::rename(temp, shader_list_user, error);
+    if (!error) {
+        shader_list_saved = descs.size();
+    }
+}
+
+static void submit_shader_list(RT64::RasterShaderCache& cache) {
+    size_t count = 0;
+    for (const std::filesystem::path& path : { shader_list_bundled, shader_list_user }) {
+        if (path.empty()) {
+            continue;
+        }
+        for (const RT64::ShaderDescription& desc : read_shader_list(path)) {
+            cache.submit(desc);
+            count++;
+        }
+    }
+    // submit skips duplicates; everything known now is already on disk
+    shader_list_saved = cache.submittedDescriptions().size();
+    if (count > 0) {
+        fprintf(stderr, "[mt] compiling %zu shaders from earlier sessions\n", shader_list_saved);
+    }
 }
 
 static RT64::UserConfiguration::Upscale2D to_rt64(mt::renderer::Upscale2D option) {
@@ -203,8 +290,7 @@ mt::renderer::RT64Context::RT64Context(uint8_t* rdram, ur::WindowHandle window_h
     // framebuffers and samples them as textures. RT64 copies those on the GPU at full
     // resolution; patches/rt64/0002 fixes the stale contents those copies showed.
     // MT_RT64_RDRAM_COPIES=1 samples them from RDRAM instead (slower, native resolution).
-    app->emulatorConfig.framebuffer.copyWithGPU = std::getenv("MT_RT64_RDRAM_COPIES") == nullptr;
-    // The game draws its 2D images with point sampling; filter_2d = linear smooths them when
+    app->emulatorConfig.framebuffer.copyWithGPU = std::getenv("MT_RT64_RDRAM_COPIES") == nullptr;    // The game draws its 2D images with point sampling; filter_2d = linear smooths them when
     // enlarged (patches/rt64/0003).
     app->enhancementConfig.rect.forceLinearFiltering = linear_filter_2d;
     switch (config.api_option) {
@@ -226,6 +312,7 @@ mt::renderer::RT64Context::RT64Context(uint8_t* rdram, ur::WindowHandle window_h
     }
 
     app->setFullScreen(config.wm_option == ur::WindowMode::Fullscreen);
+    submit_shader_list(*app->rasterShaderCache);
 }
 
 mt::renderer::RT64Context::~RT64Context() = default;
@@ -261,8 +348,21 @@ void mt::renderer::RT64Context::send_dl(const OSTask* task) {
     }
 }
 
+static std::atomic<float> widescreen_factor{1.0f};
+
+extern "C" float mt_widescreen_factor(void) {
+    return widescreen_factor.load(std::memory_order_relaxed);
+}
+
 void mt::renderer::RT64Context::update_screen() {
     mt_vi_count.fetch_add(1, std::memory_order_relaxed);
+    float wide = 1.0f;
+    const uint32_t width = app->sharedQueueResources->swapChainWidth;
+    const uint32_t height = app->sharedQueueResources->swapChainHeight;
+    if ((app->userConfig.aspectRatio == RT64::UserConfiguration::AspectRatio::Expand) && (height > 0)) {
+        wide = std::max(1.0f, (float(width) / float(height)) / (4.0f / 3.0f));
+    }
+    widescreen_factor.store(wide, std::memory_order_relaxed);
     // The runtime copies the mode's X scale; apply osViSetXScale's factor as libultra's
     // __osViSwapContext does (scale field only, offset kept).
     ur::ViRegs* vi = ur::get_vi_regs();
@@ -272,10 +372,16 @@ void mt::renderer::RT64Context::update_screen() {
         vi->VI_X_SCALE_REG = (vi->VI_X_SCALE_REG & ~0xFFFu) | scale;
     }
     app->updateScreen();
+    // every ~10 s, so a crash or a killed process keeps what this session compiled
+    if (++shader_list_vi >= 600) {
+        shader_list_vi = 0;
+        save_shader_list(*app->rasterShaderCache);
+    }
 }
 
 void mt::renderer::RT64Context::shutdown() {
     if (app != nullptr) {
+        save_shader_list(*app->rasterShaderCache);
         app->end();
     }
 }

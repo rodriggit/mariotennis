@@ -1,0 +1,46 @@
+diff --git a/src/render/rt64_native_target.cpp b/src/render/rt64_native_target.cpp
+index 6891b7b..babb38c 100644
+--- a/src/render/rt64_native_target.cpp
++++ b/src/render/rt64_native_target.cpp
+@@ -13,6 +13,17 @@
+ #include "rt64_render_worker.h"
+ 
+ namespace RT64 {
++    // Buffers are reserved with room to spare: the size a copy needs depends on the rows it covers and changes
++    // from frame to frame, and an exact size made a buffer be recreated whenever the next copy was slightly bigger.
++    static uint32_t reservedBufferSize(uint32_t bufferSize) {
++        uint32_t size = 0x1000;
++        while (size < bufferSize) {
++            size <<= 1;
++        }
++
++        return size;
++    }
++
+     // NativeTarget
+ 
+     NativeTarget::NativeTarget() { }
+@@ -35,8 +46,9 @@ namespace RT64 {
+         readBuffer.nativeBufferNextView.reset();
+         readBuffer.nativeBufferWriteView.reset();
+         readBuffer.nativeUploadBuffer.reset();
+-        readBuffer.nativeBuffer = worker->device->createBuffer(RenderBufferDesc::DefaultBuffer(bufferSize, RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS | RenderBufferFlag::FORMATTED));
+-        readBuffer.nativeBufferSize = bufferSize;
++        const uint32_t reservedSize = reservedBufferSize(bufferSize);
++        readBuffer.nativeBuffer = worker->device->createBuffer(RenderBufferDesc::DefaultBuffer(reservedSize, RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS | RenderBufferFlag::FORMATTED));
++        readBuffer.nativeBufferSize = reservedSize;
+     }
+ 
+     RenderFormat NativeTarget::getBufferFormat(uint8_t siz) const {
+@@ -310,8 +322,9 @@ namespace RT64 {
+         }
+ 
+         if (writeBuffer.nativeReadbackBufferSize < bufferSize) {
+-            writeBuffer.nativeReadbackBuffer = worker->device->createBuffer(RenderBufferDesc::ReadbackBuffer(bufferSize));
+-            writeBuffer.nativeReadbackBufferSize = bufferSize;
++            const uint32_t reservedSize = reservedBufferSize(bufferSize);
++            writeBuffer.nativeReadbackBuffer = worker->device->createBuffer(RenderBufferDesc::ReadbackBuffer(reservedSize));
++            writeBuffer.nativeReadbackBufferSize = reservedSize;
+         }
+ 
+         if (writeBuffer.writeDescSet == nullptr) {

@@ -83,6 +83,47 @@ The runtime keeps a copy of the ROM and the EEPROM save in
 `%APPDATA%\mariotennis-recomp\MarioTennisRecompiled\`, so later runs need no argument.
 Controls are in the [README](../README.md#controls).
 
+## 5. Package a release
+
+A release zip is built from a **Release** build (no console) of a tagged commit:
+
+1. Set the version in `port/src/main.cpp` (`Version::from_string`) and commit.
+2. Tag that commit: `git tag v0.1.0`.
+3. Build the Release configuration. With the Visual Studio generator, `--config Release`
+   as in step 3. With Ninja, use a separate build folder:
+
+   ```
+   cmake -S . -B cmake-build-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl
+   cmake --build cmake-build-release --target MarioTennisRecompiled
+   ```
+
+4. Package it:
+
+   ```
+   .\tools\package_release.ps1 -Version 0.1.0 -BuildDir cmake-build-release
+   ```
+
+   `-BuildDir` is the build folder (default `cmake-build-release`; a Visual Studio
+   build's `Release\` subfolder is found too). `-RuntimeDir` and `-Rt64Dir` default to
+   the checkouts next to this repository.
+
+The script checks that the executable has no console, that the version matches
+`main.cpp`, and warns if the working tree is dirty or the tag is missing or not on the
+current commit. It writes `dist/MarioTennisRecompiled-v<version>-windows-x64.zip` with:
+
+- the executable, `SDL2.dll`, `dxil.dll` and `dxcompiler.dll` (RT64 compiles shaders
+  while the game runs);
+- `README.txt` for players (from [docs/release/README.txt](release/README.txt));
+- `LICENSE.txt` (GPL-3.0) and `THIRD_PARTY_NOTICES.txt`, the licenses of everything
+  linked into the executable or shipped next to it.
+
+It prints the zip's SHA-256 for the release notes. Push the tag, then create the GitHub
+release from it and attach the zip.
+
+Releases are built locally, not in CI: every step from `build_recomp.py` onwards needs
+the ROM, and putting the ROM or the code generated from it in the repository or a CI
+service would distribute the game itself.
+
 ## Debugging aids
 
 Environment variables read at startup (use a RelWithDebInfo build: console and symbols):

@@ -4,23 +4,30 @@ A native PC port of **Mario Tennis** (Nintendo 64, USA) made by static recompila
 the game's MIPS code is translated to C with [N64Recomp] and runs on [N64ModernRuntime],
 with graphics by [RT64] (Direct3D 12 or Vulkan) and window, audio and input through SDL2.
 
-> **Status: work in progress.** The whole game recompiles and the executable builds,
-> but it has not been played through yet. Expect crashes and graphical or audio bugs.
+> **Status: playable.** Matches, tournaments and saving have been tested; other modes
+> less so. Please report problems in the issues.
 
 This is not a decompilation: there is no game source code here. The repository holds
 the tools that analyse your ROM and drive the recompiler, plus the port's own code.
 
 ## You need your own ROM
 
-No game data is included or distributed. You need a dump of **Mario Tennis (USA)**
+No ROM or game assets are included anywhere. You need a dump of **Mario Tennis (USA)**
 (game code NM8E, revision 0) in `.z64`, `.n64` or `.v64` format. Other regions and
 revisions are not supported.
 
+## Download
+
+Windows builds are on the [Releases](../../releases) page: unzip and run
+`MarioTennisRecompiled.exe` (see [Running](#running)). The executable contains the
+game's code, translated to C and compiled; the graphics, sound and everything else
+still come from your ROM.
+
 ## Building
 
-There are no prebuilt releases yet. See [docs/building.md](docs/building.md) for the
-full process: generating the recompiler inputs from your ROM, recompiling, and
-building the executable.
+See [docs/building.md](docs/building.md) for the full process: generating the
+recompiler inputs from your ROM, recompiling, building the executable, and packaging
+a release.
 
 ## Running
 

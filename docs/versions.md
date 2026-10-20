@@ -49,6 +49,13 @@ Local patches on top of these commits (`patches/`):
   Those switches still cost a full GPU synchronization each: every shadow is drawn
   at one address first at 16 and then at 8 bits, and RT64 can't reinterpret a
   framebuffer's format on the GPU yet.
+- rt64 `0006-center-on-vi-visible-width.patch`: with `aspect_ratio = expand`, the
+  original picture is centered on the framebuffer columns the VI shows rather than
+  on the whole framebuffer. The menus draw into a 384-wide image of which the VI
+  shows the left ~304 columns (osViSetXScale); RT64 centered the 2D on column 192,
+  while the 3D (centered on the game's viewport, column 152) and the visible area
+  were centered on 152: the 2D sat 40 * (factor - 1) columns too far right, off the
+  middle of the screen and away from the 3D coins of the character select.
 
 SDL2 2.30.3 (official release package, fetched by CMake on Windows; same version as Zelda64Recomp v1.2.2).
 

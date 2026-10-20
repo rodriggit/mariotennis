@@ -1,0 +1,159 @@
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -1235,6 +1235,7 @@
+                         drawParams.curWorkload = &workload;
+                         drawParams.fbPairIndex = pairCursor;
+                         drawParams.fbWidth = fbPair.colorImage.width;
++                        drawParams.fbCenterX = float(fbPair.colorImage.width) / 2.0f;
+                         drawParams.fbHeight = colorHeight;
+                         drawParams.targetWidth = fbPair.colorImage.width;
+                         drawParams.targetHeight = colorHeight;
+@@ -1568,6 +1569,10 @@
+             workload.viOriginalRate = viHistory.logicalRateFromFactors();
+         }
+ 
++        // The columns of the framebuffer the VI shows (osViSetXScale can leave the right part out).
++        workload.viFbWidth = lastScreenVI.width & 0xFFF;
++        workload.viVisibleWidth = float(int(lastScreenVI.hRegion.hEnd) - int(lastScreenVI.hRegion.hStart)) / lastScreenVI.xScaleFloat();
++
+         // Log and reset profilers.
+         dlCpuProfiler.end();
+         dlCpuProfiler.log();
+diff --git a/src/hle/rt64_workload.cpp b/src/hle/rt64_workload.cpp
+--- a/src/hle/rt64_workload.cpp
++++ b/src/hle/rt64_workload.cpp
+@@ -19,6 +19,8 @@
+         fbPairSubmitted = 0;
+         gameCallCount = 0;
+         viOriginalRate = 0;
++        viFbWidth = 0;
++        viVisibleWidth = 0.0f;
+         workloadId = 0;
+         extended.testZIndexCount = 0;
+         extended.ditherNoiseStrength = 1.0f;
+diff --git a/src/hle/rt64_workload.h b/src/hle/rt64_workload.h
+--- a/src/hle/rt64_workload.h
++++ b/src/hle/rt64_workload.h
+@@ -220,6 +220,8 @@
+         FramebufferChangePool fbChangePool;
+         FramebufferStorage fbStorage;
+         uint32_t viOriginalRate;
++        uint32_t viFbWidth;
++        float viVisibleWidth;
+         DebuggerRenderer debuggerRenderer;
+         DebuggerCamera debuggerCamera;
+         std::multimap<uint32_t, uint32_t> transformIdMap;
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -605,6 +605,12 @@
+                     drawParams.curWorkload = &workload;
+                     drawParams.fbPairIndex = f;
+                     drawParams.fbWidth = nativeColorWidth;
++                    drawParams.fbCenterX = float(nativeColorWidth) / 2.0f;
++                    if ((workload.viFbWidth == nativeColorWidth) && (workload.viVisibleWidth > 0.0f) && ((workload.viVisibleWidth + 1.0f) < float(nativeColorWidth))) {
++                        // The VI only shows the left part of this framebuffer (osViSetXScale): the
++                        // original picture is centered on that part when the aspect ratio is expanded.
++                        drawParams.fbCenterX = workload.viVisibleWidth / 2.0f;
++                    }
+                     drawParams.fbHeight = nativeColorHeight;
+                     drawParams.targetWidth = targetWidth;
+                     drawParams.targetHeight = targetHeight;
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -52,14 +52,14 @@
+ namespace RT64 {
+     // Helper functions.
+     
+-    RenderRect convertFixedRect(FixedRect rect, hlslpp::float2 resScale, int32_t fbWidth, float aspectRatioScale, float extOriginPercentage, int32_t horizontalMisalignment, uint16_t leftOrigin, uint16_t rightOrigin) {
++    RenderRect convertFixedRect(FixedRect rect, hlslpp::float2 resScale, int32_t fbWidth, float fbCenterX, float aspectRatioScale, float extOriginPercentage, int32_t horizontalMisalignment, uint16_t leftOrigin, uint16_t rightOrigin) {
+         if (!rect.isNull()) {
+             auto computeOrigin = [=](uint16_t origin) {
+                 if (origin < G_EX_ORIGIN_NONE) {
+-                    return std::lround(((fbWidth * origin) / G_EX_ORIGIN_RIGHT) * extOriginPercentage + (fbWidth / 2) * (1.0f - extOriginPercentage));
++                    return std::lround(((fbWidth * origin) / G_EX_ORIGIN_RIGHT) * extOriginPercentage + fbCenterX * (1.0f - extOriginPercentage));
+                 }
+                 else {
+-                    return fbWidth / 2L;
++                    return std::lround(fbCenterX);
+                 }
+             };
+ 
+@@ -85,13 +85,13 @@
+         }
+     }
+     
+-    RenderViewport convertViewportRect(FixedRect rect, hlslpp::float2 resScale, int32_t fbWidth, float aspectRatioScale, float extOriginPercentage, float horizontalMisalignment, uint16_t leftOrigin, uint16_t rightOrigin) {
++    RenderViewport convertViewportRect(FixedRect rect, hlslpp::float2 resScale, int32_t fbWidth, float fbCenterX, float aspectRatioScale, float extOriginPercentage, float horizontalMisalignment, uint16_t leftOrigin, uint16_t rightOrigin) {
+         auto computeOrigin = [=](uint16_t origin) {
+             if (origin < G_EX_ORIGIN_NONE) {
+-                return ((fbWidth * origin) / G_EX_ORIGIN_RIGHT) * extOriginPercentage + (fbWidth / 2) * (1.0f - extOriginPercentage);
++                return ((fbWidth * origin) / G_EX_ORIGIN_RIGHT) * extOriginPercentage + fbCenterX * (1.0f - extOriginPercentage);
+             }
+             else {
+-                return float(fbWidth) / 2;
++                return fbCenterX;
+             }
+         };
+         
+@@ -1466,7 +1466,8 @@
+         const float wideWidth = p.fbWidth * p.resolutionScale.x;
+         const float originalWidth = p.fbWidth * p.resolutionScale.y;
+         const float commonHeight = float(p.targetHeight);
+-        const float middleViewport = (wideWidth / 2.0f) - (originalWidth / 2.0f);
++        // Where the original picture sits in the wide one: centered on the columns the VI shows.
++        const float middleViewport = p.fbCenterX * (p.resolutionScale.x - p.resolutionScale.y);
+         const float extOriginPercentage = p.extAspectPercentage;
+         RenderViewport rawViewportWide(0.0f, 0.0f, wideWidth, commonHeight);
+         RenderViewport rawViewportOriginal(0.0f, 0.0f, originalWidth, commonHeight);
+@@ -1539,7 +1540,7 @@
+                         horizontalMisalignment = int32_t(p.horizontalMisalignment);
+                     }
+ 
+-                    clearRect.rect = convertFixedRect(fixedRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
++                    clearRect.rect = convertFixedRect(fixedRect, p.resolutionScale, p.fbWidth, p.fbCenterX, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
+                 }
+                 else if (call.callDesc.extendedType != DrawExtendedType::None) {
+                     switch (call.callDesc.extendedType) {
+@@ -1666,7 +1667,7 @@
+                                 horizontalMisalignment = p.horizontalMisalignment;
+                             }
+ 
+-                            triangles.viewport = convertViewportRect(fixedRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
++                            triangles.viewport = convertViewportRect(fixedRect, p.resolutionScale, p.fbWidth, p.fbCenterX, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
+ 
+                             if (p.postBlendNoise) {
+                                 // Indicate if post blend dither noise should be applied.
+@@ -1688,7 +1689,7 @@
+                             break;
+                         }
+ 
+-                        triangles.scissor = convertFixedRect(call.callDesc.scissorRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin);
++                        triangles.scissor = convertFixedRect(call.callDesc.scissorRect, p.resolutionScale, p.fbWidth, p.fbCenterX, invRatioScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin);
+                         
+                         if (triangles.vertexTestZ) {
+                             if ((proj.type == Projection::Type::Perspective) || (proj.type == Projection::Type::Orthographic)) {
+@@ -1727,8 +1728,8 @@
+                         rtScene.prevProjMatrix = drawData.prevProjTransforms[proj.transformsIndex];
+ 
+                         const auto &viewport = drawData.rspViewports[proj.transformsIndex];
+-                        rtScene.viewport = convertViewportRect(viewport.rect(), p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, 0.0f, G_EX_ORIGIN_NONE, G_EX_ORIGIN_NONE);
+-                        rtScene.scissor = convertFixedRect(proj.scissorRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, 0, G_EX_ORIGIN_NONE, G_EX_ORIGIN_NONE);
++                        rtScene.viewport = convertViewportRect(viewport.rect(), p.resolutionScale, p.fbWidth, p.fbCenterX, invRatioScale, extOriginPercentage, 0.0f, G_EX_ORIGIN_NONE, G_EX_ORIGIN_NONE);
++                        rtScene.scissor = convertFixedRect(proj.scissorRect, p.resolutionScale, p.fbWidth, p.fbCenterX, invRatioScale, extOriginPercentage, 0, G_EX_ORIGIN_NONE, G_EX_ORIGIN_NONE);
+ 
+                         rtScene.presetScene = p.presetScene;
+                         rtScene.screenWidth = lround(static_cast<float>(p.fbWidth) * p.resolutionScale.x);
+diff --git a/src/render/rt64_framebuffer_renderer.h b/src/render/rt64_framebuffer_renderer.h
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -129,6 +129,7 @@
+             const Workload *curWorkload;
+             uint32_t fbPairIndex;
+             uint32_t fbWidth;
++            float fbCenterX;
+             uint32_t fbHeight;
+             uint32_t targetWidth;
+             uint32_t targetHeight;

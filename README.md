@@ -10,6 +10,10 @@ with graphics by [RT64] (Direct3D 12 or Vulkan) and window, audio and input thro
 This is not a decompilation: there is no game source code here. The repository holds
 the tools that analyse your ROM and drive the recompiler, plus the port's own code.
 
+## About the Project
+
+In the emulation scene, it has been noticeably difficult to run this game properly, the main idea here was to overcome these issues and offer a good user experience outside of the original hardware, taking advantage of the amazing tools created by the community. Since I lack the proper experience, this was made with heavy AI assistance, to solve many issues a customized version of RT64 with patches was used, this is noted in [versions.md](docs/versions.md)
+
 ## You need your own ROM
 
 No ROM or game assets are included anywhere. You need a dump of **Mario Tennis (USA)**
@@ -85,7 +89,7 @@ take effect on the next start; delete the file to get the defaults back.
     high resolution;
   - `filter_2d`: whether those 2D images are smooth or have sharp pixels (the default).
     It only has an effect with `upscale_2d = all`, because the game draws most of its
-    2D at 1:1. Smoothing shows cuts where the game joins the blocks of its big images.
+    2D at 1:1.
 
 If a setting isn't understood, a message lists it at startup and it keeps its default.
 

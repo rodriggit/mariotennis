@@ -1,0 +1,67 @@
+diff --git a/src/shaders/TextureSampler.hlsli b/src/shaders/TextureSampler.hlsli
+--- a/src/shaders/TextureSampler.hlsli
++++ b/src/shaders/TextureSampler.hlsli
+@@ -146,6 +146,23 @@
+     
+     int2 texelBaseInt = floor(uvCoord);
+     bool filtering = or(filterBilerp, linearFiltering);
++
++    // Filtering forced on a point sampled tile (rect.forceLinearFiltering): on an axis without a mask,
++    // the texel after the tile's last one is TMEM the game didn't load for it (an image drawn in strips
++    // loads each one over the previous), so the last texel is repeated instead of blending with it.
++    int2 tapStep = int2(1, 1);
++    if (linearFiltering && !filterBilerp) {
++        const float2 tileLastF = floor(tcScale * float2(rdpTile.lrs, rdpTile.lrt) / 4.0f) - floor(tcScale * float2(rdpTile.uls, rdpTile.ult) / 4.0f) + round(tcScale - 1.0f);
++        const int2 tileLast = int2(tileLastF);
++        if ((rdpTile.masks == 0) && (texelBaseInt.x >= tileLast.x)) {
++            tapStep.x = 0;
++        }
++
++        if ((rdpTile.maskt == 0) && (texelBaseInt.y >= tileLast.y)) {
++            tapStep.y = 0;
++        }
++    }
++
+     float4 samples[4];
+     const uint nativeSampler = rdpTile.nativeSampler;
+     bool gpuTileUsesTMEM = canDecodeTMEM && gpuTileFlagRawTMEM(gpuTile.flags);
+@@ -154,15 +171,15 @@
+         int numSamples = select_uint(filtering, 4, 1);
+         [unroll]
+         for (int i = 0; i < numSamples; i++) {
+-            samples[i] = clampWrapMirrorSample(rdpTile, gpuTile, tcScale, texelBaseInt + int2(i >> 1, i & 1), tlut, gpuTileUsesTMEM, mipLevel);
++            samples[i] = clampWrapMirrorSample(rdpTile, gpuTile, tcScale, texelBaseInt + int2(i >> 1, i & 1) * tapStep, tlut, gpuTileUsesTMEM, mipLevel);
+         }
+ #else
+         samples[0] = clampWrapMirrorSample(rdpTile, gpuTile, tcScale, texelBaseInt, tlut, gpuTileUsesTMEM, mipLevel);
+         
+         if (filtering) {
+-            samples[1] = clampWrapMirrorSample(rdpTile, gpuTile, tcScale, texelBaseInt + int2(0, 1), tlut, gpuTileUsesTMEM, mipLevel);
+-            samples[2] = clampWrapMirrorSample(rdpTile, gpuTile, tcScale, texelBaseInt + int2(1, 0), tlut, gpuTileUsesTMEM, mipLevel);
+-            samples[3] = clampWrapMirrorSample(rdpTile, gpuTile, tcScale, texelBaseInt + int2(1, 1), tlut, gpuTileUsesTMEM, mipLevel);
++            samples[1] = clampWrapMirrorSample(rdpTile, gpuTile, tcScale, texelBaseInt + int2(0, tapStep.y), tlut, gpuTileUsesTMEM, mipLevel);
++            samples[2] = clampWrapMirrorSample(rdpTile, gpuTile, tcScale, texelBaseInt + int2(tapStep.x, 0), tlut, gpuTileUsesTMEM, mipLevel);
++            samples[3] = clampWrapMirrorSample(rdpTile, gpuTile, tcScale, texelBaseInt + tapStep, tlut, gpuTileUsesTMEM, mipLevel);
+         }
+ #endif
+     }
+@@ -172,15 +189,15 @@
+         int numSamples = select_uint(filtering, 4, 1);
+         [unroll]
+         for (int i = 0; i < numSamples; i++) {
+-            samples[i] = sampleTextureNative(texture, nativeSampler, texelBaseInt + int2(i >> 1, i & 1), gpuTile.textureDimensions.xy);
++            samples[i] = sampleTextureNative(texture, nativeSampler, texelBaseInt + int2(i >> 1, i & 1) * tapStep, gpuTile.textureDimensions.xy);
+         }
+ #else
+         samples[0] = sampleTextureNative(texture, nativeSampler, texelBaseInt, gpuTile.textureDimensions.xy);
+         
+         if (filtering) {
+-            samples[1] = sampleTextureNative(texture, nativeSampler, texelBaseInt + int2(0, 1), gpuTile.textureDimensions.xy);
+-            samples[2] = sampleTextureNative(texture, nativeSampler, texelBaseInt + int2(1, 0), gpuTile.textureDimensions.xy);
+-            samples[3] = sampleTextureNative(texture, nativeSampler, texelBaseInt + int2(1, 1), gpuTile.textureDimensions.xy);
++            samples[1] = sampleTextureNative(texture, nativeSampler, texelBaseInt + int2(0, tapStep.y), gpuTile.textureDimensions.xy);
++            samples[2] = sampleTextureNative(texture, nativeSampler, texelBaseInt + int2(tapStep.x, 0), gpuTile.textureDimensions.xy);
++            samples[3] = sampleTextureNative(texture, nativeSampler, texelBaseInt + tapStep, gpuTile.textureDimensions.xy);
+         }
+ #endif
+     }

@@ -56,6 +56,18 @@ Local patches on top of these commits (`patches/`):
   while the 3D (centered on the game's viewport, column 152) and the visible area
   were centered on 152: the 2D sat 40 * (factor - 1) columns too far right, off the
   middle of the screen and away from the 3D coins of the character select.
+- rt64 `0007-forced-linear-tile-edges.patch`: with `rect.forceLinearFiltering` (the game
+  asked for point sampling), the filter's extra texels stop at the tile's last texel
+  (`lrs`/`lrt`) on axes without a mask. RT64 already clamps those axes when it decodes
+  from TMEM, but not when it samples a decoded texture with a hardware sampler, which
+  clamps at the texture's edge instead. Needed for 0008, whose shorter `lrt` would
+  otherwise be ignored on that path.
+- rt64 `0008-forced-linear-rect-texel-range.patch`: with `rect.forceLinearFiltering`, the
+  tile the shader sees for a rect ends at the last texel the rect draws (from the
+  texcoords RT64 already tracks per call; rects only, axes without a mask). The intro's
+  Nintendo logo is 80 rows loaded in 6-row strips (LoadTile): the last one loads rows
+  78-83 and draws 78-79, and the filter blended row 79 with rows past the image, a
+  line under the logo.
 
 SDL2 2.30.3 (official release package, fetched by CMake on Windows; same version as Zelda64Recomp v1.2.2).
 

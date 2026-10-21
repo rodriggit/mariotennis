@@ -1,0 +1,102 @@
+diff --git a/src/hle/rt64_draw_call.h b/src/hle/rt64_draw_call.h
+--- a/src/hle/rt64_draw_call.h
++++ b/src/hle/rt64_draw_call.h
+@@ -143,6 +143,7 @@
+         uint32_t tlut;
+         interop::int2 minTexcoord;
+         interop::int2 maxTexcoord;
++        bool triangleTexcoords;
+         bool syncRequired;
+         bool tileCopyUsed;
+         uint16_t tileCopyWidth;
+diff --git a/src/hle/rt64_rdp.cpp b/src/hle/rt64_rdp.cpp
+--- a/src/hle/rt64_rdp.cpp
++++ b/src/hle/rt64_rdp.cpp
+@@ -1248,13 +1248,13 @@
+                 const float intV1 = (((ult << 7) + dtdy * ((flip ? leftPixels : topPixels) << 2)) >> 7) / 32.0f + vFractionOffset;
+                 const float intU2 = (((uls << 7) + dsdx * ((flip ? bottomPixels : rightPixels) << 2)) >> 7) / 32.0f;
+                 const float intV2 = (((ult << 7) + dtdy * ((flip ? rightPixels : bottomPixels) << 2)) >> 7) / 32.0f + vFractionOffset;
+-                updateCallTexcoords(intU1, intV1);
+-                updateCallTexcoords(intU2, intV2);
++                updateCallTexcoords(intU1, intV1, true);
++                updateCallTexcoords(intU2, intV2, true);
+             }
+         }
+         else {
+-            updateCallTexcoords(u1, v1);
+-            updateCallTexcoords(u2, v2);
++            updateCallTexcoords(u1, v1, true);
++            updateCallTexcoords(u2, v2, true);
+         }
+     }
+ 
+@@ -1287,11 +1287,12 @@
+         drawRect(ulx, uly, lrx, lry, uls, ult, dsdx, dtdy, flip, extAlignment);
+     }
+ 
+-    void RDP::updateCallTexcoords(float u, float v) {
++    void RDP::updateCallTexcoords(float u, float v, bool rect) {
+         const int workloadCursor = state->ext.workloadQueue->writeCursor;
+         Workload &workload = state->ext.workloadQueue->workloads[workloadCursor];
+         for (uint32_t t = 0; t < state->drawCall.tileCount; t++) {
+             DrawCallTile &callTile = workload.drawData.callTiles[state->drawCall.tileIndex + t];
++            callTile.triangleTexcoords = callTile.triangleTexcoords || !rect;
+             callTile.minTexcoord.x = std::min(callTile.minTexcoord.x, int(u));
+             callTile.minTexcoord.y = std::min(callTile.minTexcoord.y, int(v));
+             callTile.maxTexcoord.x = std::max(callTile.maxTexcoord.x, int(ceilf(u)));
+diff --git a/src/hle/rt64_rdp.h b/src/hle/rt64_rdp.h
+--- a/src/hle/rt64_rdp.h
++++ b/src/hle/rt64_rdp.h
+@@ -208,6 +208,6 @@
+         void drawRect(int32_t ulx, int32_t uly, int32_t lrx, int32_t lry, int16_t uls, int16_t ult, int16_t dsdx, int16_t dtdy, bool flip, const ExtendedAlignment &extAlignment);
+         void drawTexRect(int32_t ulx, int32_t uly, int32_t lrx, int32_t lry, uint8_t tile, int16_t uls, int16_t ult, int16_t dsdx, int16_t dtdy, bool flip);
+         void drawTexRect(int32_t ulx, int32_t uly, int32_t lrx, int32_t lry, uint8_t tile, int16_t uls, int16_t ult, int16_t dsdx, int16_t dtdy, bool flip, const ExtendedAlignment &extAlignment);
+-        void updateCallTexcoords(float u, float v);
++        void updateCallTexcoords(float u, float v, bool rect = false);
+     };
+ };
+\ No newline at end of file
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -272,6 +272,7 @@
+                     dstCallTile.tlut = rdp->otherMode.textLUT();
+                     dstCallTile.minTexcoord = { INT_MAX, INT_MAX };
+                     dstCallTile.maxTexcoord = { INT_MIN, INT_MIN };
++                    dstCallTile.triangleTexcoords = false;
+ 
+                     // Determine the line width that guarantees image alignment for this tile.
+                     const bool RGBA32 = (tile.siz == G_IM_SIZ_32b) && (tile.fmt == G_IM_FMT_RGBA);
+@@ -767,6 +768,7 @@
+         const bool renderToRDRAM = extendedRenderToRAMSet ? (extended.renderToRAM != 0) : ext.emulatorConfig->framebuffer.renderToRAM;
+         const bool warningsEnabled = ext.userConfig->developerMode;
+         const bool linearFiltering = !ext.userConfig->threePointFiltering;
++        const bool forceLinearRects = ext.enhancementConfig->rect.forceLinearFiltering;
+         const size_t callTileCount = workload.drawData.callTiles.size();
+         for (size_t t = 0; t < callTileCount; t++) {
+             DrawCallTile &callTile = workload.drawData.callTiles[t];
+@@ -791,6 +793,24 @@
+ 
+             }
+ 
++            // Filtering forced on rects (rect.forceLinearFiltering): on an axis without a mask, the filter stops
++            // at the tile's last texel. A rect can draw fewer texels than its tile holds (the last strip of an
++            // image loaded in strips of a fixed height), and the ones past it can be past the image: the tile
++            // the shader sees ends at the last texel the rect draws instead. Point sampling never goes further.
++            if (forceLinearRects && !callTile.triangleTexcoords && callTile.validTexcoords()) {
++                const auto &loadTile = callTile.loadTile;
++                auto &rdpTile = workload.drawData.rdpTiles[t];
++                if (loadTile.masks == 0) {
++                    const float lastS = float((int(ceilf(callTile.maxTexcoord.x * ShiftScaleMap[loadTile.shifts])) - 1) * 4);
++                    rdpTile.lrs = std::min(rdpTile.lrs, std::max(lastS, rdpTile.uls));
++                }
++
++                if (loadTile.maskt == 0) {
++                    const float lastT = float((int(ceilf(callTile.maxTexcoord.y * ShiftScaleMap[loadTile.shiftt])) - 1) * 4);
++                    rdpTile.lrt = std::min(rdpTile.lrt, std::max(lastT, rdpTile.ult));
++                }
++            }
++
+             // The rest of the validation doesn't apply to tiles that aren't GPU copies or sampling TMEM directly.
+             if (!callTile.tileCopyUsed && !callTile.rawTMEM) {
+                 continue;

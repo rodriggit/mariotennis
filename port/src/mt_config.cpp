@@ -92,8 +92,7 @@ antialiasing = none
 upscale_2d = all
 ; filter_2d: how 2D images drawn at the high resolution are smoothed (needs upscale_2d = all
 ; for most of this game's 2D). nearest = sharp pixels, as on the N64.
-; linear = smooth, but the game builds its big images from blocks, and the joins between
-; blocks show as cuts (e.g. across the title logo).
+; linear = smooth.
 filter_2d = nearest
 ; api: auto, d3d12 (Windows) or vulkan.
 api = auto

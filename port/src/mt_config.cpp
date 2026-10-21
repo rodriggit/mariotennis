@@ -96,11 +96,33 @@ upscale_2d = all
 filter_2d = nearest
 ; api: auto, d3d12 (Windows) or vulkan.
 api = auto
+
+[transfer_pak]
+; A Transfer Pak with Mario Tennis for Game Boy Color in it, to exchange data with that
+; game. Only its save is needed, not its ROM: the path of the .sav file a Game Boy
+; emulator writes (relative paths start from this file's folder). Empty = no Transfer Pak.
+; The save is read again each time the game looks for the pak, so it can be updated while
+; this runs. Sending data to the Game Boy writes it; the save as it was before goes to
+; .sav.bak first. Close the Game Boy emulator before, or it may overwrite the save.
+gb_save =
+; controller: which controller (1-4) has the Transfer Pak. That controller has no rumble.
+controller = 1
 )";
 
 namespace {
     std::map<std::string, std::map<std::string, std::string>> values;
+    std::map<std::string, std::map<std::string, std::string>> texts;   // values as written
     std::string warning_text;
+
+    std::string find(const std::map<std::string, std::map<std::string, std::string>>& in,
+                     const std::string& section, const std::string& key) {
+        auto s = in.find(section);
+        if (s == in.end()) {
+            return {};
+        }
+        auto v = s->second.find(key);
+        return v == s->second.end() ? std::string() : v->second;
+    }
 
     std::string trim(const std::string& s) {
         size_t start = s.find_first_not_of(" \t\r\n");
@@ -131,7 +153,9 @@ namespace {
                 mt::config::warn(source + " line " + std::to_string(number) + ": no '=' in \"" + line + "\"");
                 continue;
             }
-            values[section][lower(trim(line.substr(0, eq)))] = lower(trim(line.substr(eq + 1)));
+            const std::string key = lower(trim(line.substr(0, eq)));
+            texts[section][key] = trim(line.substr(eq + 1));
+            values[section][key] = lower(texts[section][key]);
         }
     }
 
@@ -181,12 +205,11 @@ std::filesystem::path mt::config::load(const std::filesystem::path& fallback_fol
 }
 
 std::string mt::config::get(const std::string& section, const std::string& key) {
-    auto s = values.find(lower(section));
-    if (s == values.end()) {
-        return {};
-    }
-    auto v = s->second.find(lower(key));
-    return v == s->second.end() ? std::string() : v->second;
+    return find(values, lower(section), lower(key));
+}
+
+std::string mt::config::get_text(const std::string& section, const std::string& key) {
+    return find(texts, lower(section), lower(key));
 }
 
 std::vector<std::string> mt::config::get_list(const std::string& section, const std::string& key) {

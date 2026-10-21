@@ -12,7 +12,7 @@ the tools that analyse your ROM and drive the recompiler, plus the port's own co
 
 ## About the Project
 
-In the emulation scene, it has been noticeably difficult to run this game properly, the main idea here was to overcome these issues and offer a good user experience outside of the original hardware, taking advantage of the amazing tools created by the community. Since I lack the proper experience, this was made with heavy AI assistance, to solve many issues a customized version of RT64 with patches was used, this is noted in [versions.md](docs/versions.md)
+In the emulation scene, it has been noticeably difficult to run this game properly, the main idea here was to overcome these issues and offer a good user experience outside of the original hardware, taking advantage of the amazing tools created by the community. Since I lack the proper experience, this was made with heavy AI assistance. To solve many issues, a customized version of RT64 with patches was used, this is noted in [versions.md](docs/versions.md)
 
 ## You need your own ROM
 
@@ -91,7 +91,20 @@ take effect on the next start; delete the file to get the defaults back.
     It only has an effect with `upscale_2d = all`, because the game draws most of its
     2D at 1:1.
 
+- `[transfer_pak]`: `gb_save`, see [Transfer Pak](#transfer-pak); `controller`, which
+  controller has it (1 by default).
+
 If a setting isn't understood, a message lists it at startup and it keeps its default.
+
+## Transfer Pak
+
+Experimental. To exchange data with *Mario Tennis* for Game Boy Color, set `gb_save` in
+`[transfer_pak]` to that game's save: the `.sav` file extracted from the game cart. The
+Game Boy ROM isn't needed. The port builds the cartridge from what the N64 game checks:
+the ROM header comes from the copies of the logo and title kept in the N64 ROM, and the
+cartridge RAM is the save. The save is read again each time the game looks for the pak.
+Sending data to the Game Boy game writes to the save, after copying it as it was to
+`.sav.bak` (once per run). The controller with the pak has no rumble, as on the console.
 
 ## Changes to the game
 
@@ -103,8 +116,8 @@ If a setting isn't understood, a message lists it at startup and it keeps its de
 
 ## Known limitations
 
-- **Transfer Pak** (Game Boy connectivity) and **Controller Pak** are not supported;
-  the game sees no pak connected.
+- The **Transfer Pak** works with a Game Boy save file, not a cartridge (see
+  [Transfer Pak](#transfer-pak)).
 - Original frame rate. Widescreen (`aspect_ratio = expand`) is experimental.
 
 ## How it works

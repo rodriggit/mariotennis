@@ -29,6 +29,7 @@
 #include "xxHash/xxh3.h"
 
 #include "mt_config.h"
+#include "mt_pak.h"
 #include "mt_render.h"
 
 extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* ctx);
@@ -283,8 +284,9 @@ static bool get_input(int port, uint16_t* buttons, float* x, float* y) {
     return true;
 }
 
+// A controller with the Transfer Pak has no Rumble Pak: the runtime's osMotor* still accept it.
 static void set_rumble(int port, bool on) {
-    if (port >= 0 && port < num_ports) {
+    if (port >= 0 && port < num_ports && port != mt::pak::transfer_pak_port()) {
         rumble_requested[port] = on;
     }
 }
@@ -295,7 +297,10 @@ static ultramodern::input::connected_device_info_t get_connected_device_info(int
     if (port < 0 || port >= num_ports || !pads[port].connected) {
         return { Device::None, Pak::None };
     }
-    return { Device::Controller, pads[port].rumble_pak ? Pak::RumblePak : Pak::None };
+    // The runtime only turns this into the "pak plugged in" status bit; there is no Transfer
+    // Pak value, and the game probes that pak itself (port/src/mt_pak.cpp).
+    const bool pak = pads[port].rumble_pak || port == mt::pak::transfer_pak_port();
+    return { Device::Controller, pak ? Pak::RumblePak : Pak::None };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -573,6 +578,7 @@ int main(int argc, char** argv) {
     const std::filesystem::path config_path = mt::config::load(config_folder());
     fprintf(stderr, "[mt] settings: %s\n", config_path.empty() ? "(defaults)" : mt::config::path_text(config_path).c_str());
     load_controls();
+    mt::pak::load_transfer_pak(config_path.empty() ? config_folder() : config_path.parent_path());
 
     recomp::GameEntry game{
         .rom_hash = MT_ROM_HASH,

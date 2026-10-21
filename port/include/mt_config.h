@@ -17,6 +17,9 @@ namespace mt::config {
     // spaces removed (SDL's key and button names are case-insensitive).
     std::string get(const std::string& section, const std::string& key);
 
+    // The same, keeping the value's case (file paths).
+    std::string get_text(const std::string& section, const std::string& key);
+
     // Comma-separated values of `key` in [section]; empty entries are dropped.
     std::vector<std::string> get_list(const std::string& section, const std::string& key);
 

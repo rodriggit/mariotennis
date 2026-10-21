@@ -60,6 +60,17 @@ delete the file to get the defaults back. If a setting isn't understood, a
 message lists it at startup and it keeps its default.
 
 
+TRANSFER PAK (experimental)
+---------------------------
+To exchange data with Mario Tennis for Game Boy Color, set gb_save in the
+[transfer_pak] section of config.ini to that game's save: the .sav file a
+Game Boy emulator writes. The Game Boy ROM isn't needed. Sending data to the
+Game Boy writes to the save, after copying it as it was to .sav.bak; close the
+Game Boy emulator first, or it may overwrite the save. The pak goes on
+controller 1 (the controller setting changes it), and that controller has no
+rumble while it has the pak.
+
+
 CHANGES TO THE GAME
 -------------------
 - The pause menu during a match has an option to leave the match and go back
@@ -78,7 +89,8 @@ To continue a saved tournament, load it from the game's save menu.
 
 KNOWN LIMITATIONS
 -----------------
-- Transfer Pak (Game Boy connectivity) and Controller Pak are not supported.
+- The Transfer Pak works with a Game Boy save file, not a cartridge (see
+  above), and is experimental.
 - Original frame rate. Widescreen (aspect_ratio = expand in config.ini) is
   experimental.
 

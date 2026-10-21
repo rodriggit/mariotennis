@@ -169,9 +169,33 @@ The runtime emulates no Controller/Transfer Pak (osPfs* return
 PFS_ERR_NOPACK); rumble works through osMotor*/__osMotorAccess. Main's pak
 status routines are named (osPfsIsPlug, __osPfsGetStatus, ...) and the
 Controller Pak id/inode routines (0x80048F38–0x8004960C) are `ignored`. The
-Transfer Pak code in file 71 (0x80122xxx) calls __osPfsGetStatus,
-__osContRamRead and __osContRamWrite: port/src/mt_pak.cpp returns
-PFS_ERR_NOPACK from all three, so the game sees no Transfer Pak.
+Transfer Pak code in file 71 (NuSystem nuContGBPak* at 0x80121DD0, libultra
+osGbpak* at 0x80122370) calls __osPfsGetStatus, __osContRamRead and
+__osContRamWrite, which port/src/mt_pak.cpp implements. With
+`[transfer_pak] gb_save` set, they emulate a Transfer Pak on one controller.
+Otherwise they return PFS_ERR_NOPACK.
+
+What the game checks and reads (it also writes to the cartridge RAM when it sends
+data to the GBC game, although no direct `jal` to nuContGBPakFwrite (0x801220C8)
+was found):
+- **Detection (0x80120360):** osGbpakReadId checks the logo at 0x104 against
+  0x80125EE0 and verifies the header checksum. Then the title at 0x134 must
+  match the 15 bytes at 0x80125C20 ("CGBTENNIS \0BM8E"), and the licensee at
+  0x144 must be "01".
+- **osGbpakCheckConnector:** runs on every read and expects ROM at 0x80, 0x100,
+  … 0x4000 to differ from the previous address. It also expects disabled RAM
+  (0xA000) to differ from ROM at 0x2000.
+- **The save (0x8011FF08):** 0x800 bytes are read from RAM 0xA000. The
+  signature "CAMELOTGBTENNIS" must be at 0x20, followed by a directory of blocks
+  at 0x60, each with a checksum. Only RAM bank 0 is read.
+
+So the cartridge is synthesized:
+- the header from the game's own copies, as an MBC3 with 32 KB of RAM;
+- the rest of the ROM, hashed filler;
+- the RAM, the GBC game's .sav, read again on each power-on. RAM writes go back
+  to the .sav (over the file's own size, through a temporary file) when the game
+  disables the RAM or powers the pak off. Before the first write of a run, the
+  file is copied to .sav.bak.
 
 `tools/scan_unsupported.py build N64Recomp/src/symbol_lists.cpp
 N64ModernRuntime port` lists the non-recompiled functions that recompiled code

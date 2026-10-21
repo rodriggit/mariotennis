@@ -63,7 +63,8 @@ int32_t mt_pause_text_alpha(int32_t alpha);
 int32_t mt_pause_action(int32_t item);
 // f86_8012DF60: Controller's action has loaded its image
 void mt_pause_controller(uint8_t* rdram);
-// pak access from the Transfer Pak code (port/src/mt_pak.cpp): always "no pak"
+// pak access from the Transfer Pak code (port/src/mt_pak.cpp): the emulated Transfer Pak
+// when [transfer_pak] gb_save is set, else "no pak"
 void __osPfsGetStatus_recomp(uint8_t* rdram, recomp_context* ctx);
 void __osContRamRead_recomp(uint8_t* rdram, recomp_context* ctx);
 void __osContRamWrite_recomp(uint8_t* rdram, recomp_context* ctx);

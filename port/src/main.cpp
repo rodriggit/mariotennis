@@ -564,7 +564,7 @@ int main(int argc, char** argv) {
     setvbuf(stderr, nullptr, _IONBF, 0);
 
     recomp::Version version{};
-    recomp::Version::from_string("0.1.0", version);
+    recomp::Version::from_string("0.2.0", version);
 
     SDL_InitSubSystem(SDL_INIT_AUDIO);
     init_audio();

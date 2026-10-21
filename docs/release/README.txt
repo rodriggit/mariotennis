@@ -60,6 +60,13 @@ delete the file to get the defaults back. If a setting isn't understood, a
 message lists it at startup and it keeps its default.
 
 
+CHANGES TO THE GAME
+-------------------
+- The pause menu during a match has an option to leave the match and go back
+  to the menus, after a yes / no question. To make room for it, Rules and Controller are one item: on the
+  rules, A turns the panel to the controls and B goes back to the menu.
+
+
 SAVES
 -----
 Saves and the stored copy of the ROM are in:

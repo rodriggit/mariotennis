@@ -93,6 +93,14 @@ take effect on the next start; delete the file to get the defaults back.
 
 If a setting isn't understood, a message lists it at startup and it keeps its default.
 
+## Changes to the game
+
+- The pause menu during a match has an option to leave the match and go back to the
+  menus, after a yes / no question. It's the game's own exit item, which the original
+  only offers in some situations. To make room for it (the menu holds 5 items, and a tournament already
+  uses them all), Rules and Controller are one item: on the rules, A turns the panel to
+  the controls and B goes back to the menu.
+
 ## Known limitations
 
 - **Transfer Pak** (Game Boy connectivity) and **Controller Pak** are not supported;

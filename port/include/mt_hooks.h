@@ -51,6 +51,18 @@ float mt_menu_coin_x(float x);
 // 1 bottom; strip 0..2) or after the last one (part 2) and returns the new gfx pointer,
 // so with aspect_ratio = expand the banners sit against the edges of the wide picture
 int32_t mt_menu_banner(uint8_t* rdram, int32_t gfx, int32_t part, int32_t strip);
+// f86_8012CEC4: the match's pause menu has filled its item list; merge Rules and Controller
+// and append the exit item
+void mt_pause_items(uint8_t* rdram);
+// f86_8012DF60: start of a pause menu frame (buttons = pressed this frame); A on the Rules
+// panel fades its text out and switches it to the controls. Returns the buttons to use
+uint32_t mt_pause_frame(uint8_t* rdram, uint32_t buttons);
+// f86_8013083C: the alpha the rules text is drawn with
+int32_t mt_pause_text_alpha(int32_t alpha);
+// f86_8012DF60: the id of the item whose action runs; returns the one to run
+int32_t mt_pause_action(int32_t item);
+// f86_8012DF60: Controller's action has loaded its image
+void mt_pause_controller(uint8_t* rdram);
 // pak access from the Transfer Pak code (port/src/mt_pak.cpp): always "no pak"
 void __osPfsGetStatus_recomp(uint8_t* rdram, recomp_context* ctx);
 void __osContRamRead_recomp(uint8_t* rdram, recomp_context* ctx);

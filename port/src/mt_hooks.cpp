@@ -11,6 +11,7 @@
 //  - the per-character modules (TLB 0x10000000) stay at 0x10000000: osMapTLB
 //    swaps which module is registered there and sets mt_window_base, which the
 //    modules' data accesses read (hooks in recomp.toml).
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -318,6 +319,98 @@ float mt_menu_coin_x(float x) {
         return x;
     }
     return x + 304.0f * wide;
+}
+
+// The pause menu (see PAUSE_ITEMS in tools/gen_config.py). Items: count at 0x8015D288, ids
+// at 0x8015D29C, room for 5. Exhibition lists Rules, Controller, Camera and the book
+// (1, 2, 6, 3); a tournament adds its bracket (0) and fills the list. Ids 5 and 7 leave the
+// match (menu re-entry screen 1 / 2); id 8 asks first (yes / no, cursor at 0x8015D28B) and
+// then leaves like 5.
+namespace {
+constexpr int32_t kPauseCount = (int32_t)0x8015D288, kPauseItems = (int32_t)0x8015D29C;
+constexpr int32_t kPauseState = (int32_t)0x8015D2A5, kPausePress = (int32_t)0x8015D285;
+constexpr int32_t kPausePanelRules = (int32_t)0x8015D2A7, kPausePanelOpen = (int32_t)0x8015D2A6;
+constexpr int kPauseMaxItems = 5;
+constexpr int kItemRules = 1, kItemController = 2;
+constexpr int kItemQuitNow = 5, kItemQuitOther = 7, kItemQuitAsk = 8;
+constexpr int kStatePress = 2, kStatePanelShown = 6, kPressDone = 6, kPanelOpen = 8;
+constexpr uint32_t kButtonA = 0x8000, kButtonB = 0x4000;
+constexpr int kTextFadeFrames = 10;
+
+bool pause_merged = false;          // Rules also shows the Controller panel
+int pause_text_fade = 0;            // frames of the rules text's fade-out so far (0 = none)
+bool pause_show_controller = false; // the next action is Controller's, on the open panel
+}
+
+// Rules and Controller become one item (Rules' icon and label), which frees a slot for the
+// exit item even in a tournament.
+void mt_pause_items(uint8_t* rdram) {
+    int count = MEM_BU(0, kPauseCount);
+    int items[kPauseMaxItems];
+    int n = 0;
+    bool has_rules = false, has_controller = false, has_exit = false;
+    for (int i = 0; i < count && i < kPauseMaxItems; i++) {
+        items[n] = MEM_BU(i, kPauseItems);
+        has_rules |= items[n] == kItemRules;
+        has_controller |= items[n] == kItemController;
+        has_exit |= (items[n] == kItemQuitNow) || (items[n] == kItemQuitOther) ||
+                    (items[n] == kItemQuitAsk);
+        n++;
+    }
+    pause_merged = has_rules && has_controller;
+    pause_text_fade = 0;
+    pause_show_controller = false;
+    if (pause_merged) {
+        n = int(std::remove(items, items + n, kItemController) - items);
+    }
+    if (!has_exit && n < kPauseMaxItems) {
+        items[n++] = kItemQuitAsk;
+    }
+    for (int i = 0; i < n; i++) {
+        MEM_B(i, kPauseItems) = (int8_t)items[i];
+    }
+    MEM_B(0, kPauseCount) = (int8_t)n;
+}
+
+// A on the shown Rules panel (B still closes it): the rules text fades out
+// (mt_pause_text_alpha) while the panel ignores A and B. Then, instead of closing, the port
+// starts an icon press that has already finished, so this frame runs the selected item's
+// action, which mt_pause_action turns into Controller's. That action loads the controls
+// image into the panel's buffer, clears the rules flag and restarts the opening;
+// mt_pause_controller then makes the panel fully open again, so only its contents change.
+// Returns the buttons the menu sees.
+uint32_t mt_pause_frame(uint8_t* rdram, uint32_t buttons) {
+    if (!pause_merged || MEM_BU(0, kPauseState) != kStatePanelShown ||
+        MEM_BU(0, kPausePanelRules) != 1) {
+        pause_text_fade = 0;
+        return buttons;
+    }
+    if (pause_text_fade == 0 && !(buttons & kButtonA)) {
+        return buttons;
+    }
+    if (++pause_text_fade > kTextFadeFrames) {
+        pause_text_fade = 0;
+        pause_show_controller = true;
+        MEM_B(0, kPauseState) = (int8_t)kStatePress;
+        MEM_B(0, kPausePress) = (int8_t)kPressDone;
+    }
+    return buttons & ~(kButtonA | kButtonB);
+}
+
+// f86_8013083C draws the rules text with this alpha (255)
+int32_t mt_pause_text_alpha(int32_t alpha) {
+    return alpha * (kTextFadeFrames - pause_text_fade) / kTextFadeFrames;
+}
+
+int32_t mt_pause_action(int32_t item) {
+    return pause_show_controller ? kItemController : item;
+}
+
+void mt_pause_controller(uint8_t* rdram) {
+    if (pause_show_controller) {
+        pause_show_controller = false;
+        MEM_B(0, kPausePanelOpen) = (int8_t)kPanelOpen;
+    }
 }
 
 // RT64 extended GBI (rt64/include/rt64_extended_gbi.h), opcode 0x64 once enabled through
